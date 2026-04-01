@@ -1,11 +1,12 @@
 # %%
-# enabling debug logging so we can see what happens in the background
+# Imports
 import datetime as dt
 import logging
 
 import ddlpy
 import polars as pl
 
+# enabling debug logging so we can see what happens in the background
 logging.basicConfig()
 logging.getLogger("ddlpy").setLevel(logging.INFO)
 
@@ -26,6 +27,8 @@ locations_pl = locations_pl.filter(
             | (pl.col("LocationCode").str.contains("denoever"))
             | (pl.col("LocationCode").str.contains("kornwerderzand"))
             | (pl.col("LocationCode").str.contains("andijk"))
+            | (pl.col("LocationCode").str.contains("waddenzee"))
+            | (pl.col("LocationCode").str.contains("markermeer"))
         )
         & (pl.col("ProcesType") == "meting")
         & (pl.col("Hoedanigheid.Code") == "Cl")
@@ -36,6 +39,8 @@ locations_pl = locations_pl.filter(
             | (pl.col("LocationCode").str.contains("denoever"))
             | (pl.col("LocationCode").str.contains("kornwerderzand"))
             | (pl.col("LocationCode").str.contains("andijk"))
+            | (pl.col("LocationCode").str.contains("waddenzee"))
+            | (pl.col("LocationCode").str.contains("markermeer"))
         )
         & (pl.col("ProcesType") == "meting")
         & (pl.col("Grootheid.Code") == "SALNTT")
@@ -45,41 +50,41 @@ locations_pl
 # %%
 unique_location_codes = locations_pl["LocationCode"].unique().to_list()
 print(unique_location_codes)
-
-
 # %%
 
 bool_stations = locations.index.isin([
-    "andijk",
+    "andijk",  # -1.5
     "denoever.ijsselmeer.stevinsluizen.zuid",
     "denoever.ijsselmeer.vaargeul",
     "denoever.spuisluis.binnen",
+    "denoever.ijsselmeer.binnenhaven",  # -1.25, -4
+    "denoever.waddenzee.voorhaven.kolk",  # -2, -4
     "kornwerderzand.ijsselmeer.spui",
-    "kornwerderzand.ijsselmeer.binnenhaven",
+    "kornwerderzand.ijsselmeer.binnenhaven",  # -1.25, -4
     "kornwerderzand.ijsselmeer.vaargeul",
     "kornwerderzand.ijsselmeer.spuihavenzuid",
     "kornwerderzand.ijsselmeer.middelgronden",
-    "denoever.waddenzee.voorhaven.kolk",
-    "kornwerderzand.waddenzee.voorhaven.kolk",
-    "friesekust.ijsselmeer",
-    "wieringen.ijsselmeer.oost",
-    "rotterdamsehoek.ijsselmeer",
-    "denoever.ijsselmeer.binnenhaven",
+    "kornwerderzand.waddenzee.voorhaven.kolk",  # -2, -4
+    # "friesekust.ijsselmeer",
+    # "wieringen.ijsselmeer.oost", # -1.5
+    # "rotterdamsehoek.ijsselmeer",
+    "markermeer.trintelzand",
+    "waddenzee.ra",
+    "markermeer.midden",
 ])
-bool_procestype = locations["ProcesType"].isin([
-    "meting"
-])  # meting/astronomisch/verwachting
+bool_procestype = locations["ProcesType"].isin(["meting"])
 bool_grootheid_CONC = locations["Grootheid.Code"].isin(["CONCTTE"])  # salinity (SALNTT)
 bool_grootheid_SAL = locations["Grootheid.Code"].isin(["SALNTT"])  # salinity (SALNTT)
-bool_hoedanigheid_CL = locations["Hoedanigheid.Code"].isin([
-    "Cl"
-])  # vertical reference (NAP/MSL)
-bool_hoedanigheid_SAL = locations["Hoedanigheid.Code"].isin(["NVT"])
+bool_parameter_CL = locations["Parameter.Code"].isin(["Cl"])
+bool_parameter_SAL = locations["Parameter.Code"].isin(["NVT"])
+
 selected = locations.loc[
     bool_stations
     & bool_procestype
-    & (bool_grootheid_CONC | bool_grootheid_SAL)
-    & (bool_hoedanigheid_CL | bool_hoedanigheid_SAL)
+    & (
+        (bool_grootheid_CONC & bool_parameter_CL)
+        | (bool_grootheid_SAL & bool_parameter_SAL)
+    )
 ]
 selected
 
@@ -88,14 +93,27 @@ selected_pl
 # %%
 unique_location_codes = selected_pl["LocationCode"].unique().to_list()
 unique_location_codes
+
+# %%
+# %%
+unique_location_codes = (
+    selected_pl
+    .select(["LocationCode", "Naam", "Omschrijving"])
+    .unique()
+    .sort("LocationCode")
+)
+unique_location_codes
 # %%
 
 # if we pass one row to the measurements function you can get all the measurements
 all_measurements = []
 print(f"Starting processing of {len(selected)} stations...")
-for idx, row in selected.iterrows():
+for idx, (index, row) in enumerate(selected.iterrows()):
     station_name = row["Naam"]
-    print(f"Getting measurements for {station_name} (index {idx})")
+    grootheid = row["Grootheid.Code"]
+    print(
+        f"{index}/{len(selected)}: Getting measurements for {station_name} ({grootheid})"
+    )
     print("  Start date: 2018-01-01, End date: 2025-04-01")
     measurements = ddlpy.measurements(row, "2018-01-01", "2025-04-01")
     print(f"  Retrieved {len(measurements)} measurements for {station_name}")
@@ -123,10 +141,10 @@ measurements.write_parquet(
 
 # %%
 # Read parquet file
+TODAY = dt.datetime.now().strftime("%Y%m%d")
 measurements = pl.read_parquet(
     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_{TODAY}.parquet"
 )
-
 # %%
 measurements.shape
 # %%
@@ -144,13 +162,13 @@ measurements
 # Generate median, 90th percentile, and 10th percentile per Naam
 percentile_stats = (
     measurements
-    .group_by("Naam")
+    .group_by(["Naam", "Grootheid.Code"])
     .agg(
         pl.col("Meetwaarde.Waarde_Numeriek").median().alias("median"),
         pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.90).alias("p90"),
         pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.10).alias("p10"),
     )
-    .sort("Naam")
+    .sort(["Naam", "Grootheid.Code"])
 )
 percentile_stats
 
@@ -204,6 +222,88 @@ for idx, naam in enumerate(unique_names):
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
 
+    # Add year and month columns
+    data_pd["year"] = data_pd["time"].dt.year
+    data_pd["month"] = data_pd["time"].dt.month
+
+    # Define seasons: summer (4-9), winter (10,11,12,1,2,3)
+    # Winter months 10,11,12 belong to the year-1, months 1,2,3 belong to the year
+    def assign_season_and_year(row):
+        month = row["month"]
+        year = row["year"]
+        if month in [4, 5, 6, 7, 8, 9]:
+            return "Summer", year
+        elif month in [10, 11, 12]:
+            return "Winter", year + 1
+        elif month in [1, 2, 3]:
+            return "Winter", year
+        else:
+            return "Other", year
+
+    data_pd[["season", "year"]] = data_pd.apply(
+        assign_season_and_year, axis=1, result_type="expand"
+    )
+
+    # Filter for summer and winter only
+    seasonal_data = data_pd[data_pd["season"] != "Other"]
+
+    # Calculate median per year and season
+    seasonal_median = (
+        seasonal_data
+        .groupby(["year", "season"])["Meetwaarde.Waarde_Numeriek"]
+        .median()
+        .reset_index()
+    )
+
+    # Plot summer and winter separately
+    summer_data = seasonal_median[seasonal_median["season"] == "Summer"]
+    winter_data = seasonal_median[seasonal_median["season"] == "Winter"]
+
+    axes[idx].plot(
+        summer_data["year"],
+        summer_data["Meetwaarde.Waarde_Numeriek"],
+        label="Summer",
+        marker="o",
+        linewidth=1.5,
+        markersize=6,
+    )
+    axes[idx].plot(
+        winter_data["year"],
+        winter_data["Meetwaarde.Waarde_Numeriek"],
+        label="Winter",
+        marker="s",
+        linewidth=1.5,
+        markersize=6,
+    )
+
+    axes[idx].set_xlabel("Year")
+    axes[idx].set_ylabel("Meetwaarde (Median)")
+    axes[idx].set_title(f"Seasonal Median - {naam}")
+    axes[idx].legend()
+    axes[idx].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# %%
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_style("whitegrid")
+
+unique_names = measurements["Naam"].unique()
+
+num_plots = len(unique_names)
+fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
+
+if num_plots == 1:
+    axes = [axes]
+
+for idx, naam in enumerate(unique_names):
+    data = measurements.filter(pl.col("Naam") == naam)
+    data_sorted = data.sort("time")
+    data_pd = data_sorted.to_pandas()
+
     # Calculate monthly median values
     data_pd["year_month"] = data_pd["time"].dt.to_period("M")
     monthly_median = data_pd.groupby("year_month")[
@@ -212,7 +312,11 @@ for idx, naam in enumerate(unique_names):
     monthly_median.index = monthly_median.index.to_timestamp()
 
     axes[idx].plot(
-        monthly_median.index, monthly_median.values, marker="o", markersize=4
+        monthly_median.index,
+        monthly_median.values,
+        marker="o",
+        markersize=4,
+        linewidth=1.5,
     )
     axes[idx].set_xlabel("Date")
     axes[idx].set_ylabel("Meetwaarde (Median)")
@@ -422,50 +526,91 @@ plt.tight_layout()
 plt.show()
 
 # %%
+locations_pl
+# %%
 locations_pl_coords = locations_pl.select([
     "LocationCode",
     "Lat",
     "Lon",
     "Naam",
     "Grootheid.Code",
-])
-
+]).unique()
+locations_pl_coords
 # %%
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
+percentile_stats
+# %%
 import matplotlib.pyplot as plt
+from contextily import add_basemap
 
-# Create figure with ERTS89 (EPSG:4258) projection
-fig, ax = plt.subplots(figsize=(12, 10), subplot_kw={"projection": ccrs.PlateCarree()})
+# Create figure with standard projection
+fig, ax = plt.subplots(figsize=(25, 15))
 
 # Plot locations
 locations_df = locations_pl_coords.to_pandas()
-ax.scatter(
-    locations_df["Lon"],
-    locations_df["Lat"],
-    transform=ccrs.PlateCarree(),
-    s=100,
-    alpha=0.6,
-    edgecolors="k",
+
+# Merge median Meetwaarde values with locations
+# Merge median Meetwaarde values with locations
+median_values = percentile_stats[["Naam", "Grootheid.Code", "median"]].to_pandas()
+locations_df = locations_df.merge(
+    median_values,
+    left_on=["Naam", "Grootheid.Code"],
+    right_on=["Naam", "Grootheid.Code"],
+    how="inner",
 )
 
-# Add labels for each location
-for idx, row in locations_df.iterrows():
+locations_df = locations_df.dropna(subset=["median"])  # Drop rows without median values
+
+scatter = ax.scatter(
+    locations_df["Lon"],
+    locations_df["Lat"],
+    c=locations_df["median"],
+    cmap="viridis",
+    s=200,
+    alpha=0.6,
+    edgecolors="k",
+    zorder=5,
+)
+cbar = fig.colorbar(scatter, ax=ax, label="Median Meetwaarde")  # was plt.colorbar(...)
+
+# Add labels for each location + median value
+for idx, (_, row) in enumerate(locations_df.iterrows()):
+    ha = ["left", "right"][idx % 2]
+    va = ["top", "bottom"][(idx // 2) % 2]
+    offset_x = 0.03 if ha == "left" else -0.03
+    offset_y = 0.03 if va == "top" else -0.03
+    ax.plot(
+        [row["Lon"], row["Lon"] + offset_x],
+        [row["Lat"], row["Lat"] + offset_y],
+        color="k",
+        linewidth=0.5,
+        zorder=4,
+    )
     ax.text(
-        row["Lon"],
-        row["Lat"],
-        row["Naam"],
-        transform=ccrs.PlateCarree(),
-        fontsize=8,
-        ha="right",
+        row["Lon"] + offset_x,
+        row["Lat"] + offset_y,
+        f"{row['Naam']}\n{row['Grootheid.Code']}\nmed: {row['median']:.2f}",
+        fontsize=7,
+        ha=ha,
+        va=va,
+        bbox=dict(
+            boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="grey"
+        ),
+        zorder=6,
     )
 
-# ax.add_feature(cfeature.COASTLINE, zorder=-20)
-ax.add_feature(cfeature.LAKES, zorder=-50)
-ax.add_feature(cfeature.OCEAN, zorder=-100)
-ax.gridlines(draw_labels=True)
-# Set extent to Netherlands (lon_min, lon_max, lat_min, lat_max)
-ax.set_extent([4.7, 5.75, 52.5, 53.1], crs=ccrs.PlateCarree())
-plt.title("Salinity Measurement Locations (ERTS89)")
+# Add OpenStreetMap basemap
+ax.set_xlim(4.95, 5.7)
+ax.set_ylim(52.35, 53.2)
+add_basemap(
+    ax,
+    crs="EPSG:4258",
+    source="OpenStreetMap.Mapnik",
+    zoom=10,
+    alpha=0.5,
+    attribution_size=8,
+)
+ax.set_xlabel("Longitude")
+ax.set_ylabel("Latitude")
+plt.title("Salinity Measurement Locations (OpenStreetMap)")
 plt.show()
 # %%
