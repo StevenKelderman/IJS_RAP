@@ -1,0 +1,24 @@
+[workspace]
+authors = ["Steven Kelderman <stevenkelderman@deltares.nl>"]
+channels = ["conda-forge"]
+name = "analyse"
+platforms = ["win-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.14.*"
+polars = ">=1.39.3,<2"
+pandas = ">=3.0.2,<4"
+matplotlib = ">=3.10.8,<4"
+seaborn = ">=0.13.2,<0.14"
+ipykernel = ">=7.2.0,<8"
+pip = ">=26.0.1,<27"
+pyarrow = ">=23.0.1,<24"
+cartopy = ">=0.25.0,<0.26"
+
+[pypi-dependencies]
+rws-ddlpy = ">=0.10.0, <0.11"
+polars = { version = "*", extras = ["pyarrow"] }
+pyarrow = "*"
