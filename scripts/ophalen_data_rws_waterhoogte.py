@@ -311,6 +311,85 @@ for idx, naam in enumerate(unique_names):
 
 plt.tight_layout()
 plt.show()
+
+# %%
+
+measurements
+
+
+# %%
+# X-Y plot for Houtribsluis locations
+import matplotlib.pyplot as plt
+import numpy as np
+
+houtribsluis_data = measurements.filter(pl.col("Naam").str.contains("Houtribsluis"))
+
+if len(houtribsluis_data) > 0:
+    houtribsluis_df = houtribsluis_data.sort("time").to_pandas()
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    unique_names = houtribsluis_df["Naam"].unique()
+    if len(unique_names) >= 2:
+        data1 = houtribsluis_df[houtribsluis_df["Naam"] == unique_names[0]]
+        data2 = houtribsluis_df[houtribsluis_df["Naam"] == unique_names[1]]
+        data1["year"] = data1["time"].dt.year
+        colors = data1["year"].apply(lambda x: plt.cm.Set2(x % 8))
+        ax.scatter(
+            data1["Meetwaarde.Waarde_Numeriek"],
+            data2["Meetwaarde.Waarde_Numeriek"],
+            marker="o",
+            s=30,
+            c=data1["year"],
+            cmap="Set2",
+            alpha=0.7,
+        )
+        cbar = plt.colorbar(ax.collections[0], ax=ax)
+        cbar.set_label("Year")
+        # Add linear trendline
+        mask = (
+            data1["Meetwaarde.Waarde_Numeriek"].notna()
+            & data2["Meetwaarde.Waarde_Numeriek"].notna()
+        )
+        if mask.sum() > 1:
+            z = np.polyfit(
+                data1.loc[mask, "Meetwaarde.Waarde_Numeriek"],
+                data2.loc[mask, "Meetwaarde.Waarde_Numeriek"],
+                1,
+            )
+            p = np.poly1d(z)
+            x_trend = np.linspace(
+                data1["Meetwaarde.Waarde_Numeriek"].min(),
+                data1["Meetwaarde.Waarde_Numeriek"].max(),
+                100,
+            )
+            ax.plot(x_trend, p(x_trend), "r-", linewidth=2, label="Trendline")
+        ax.set_xlabel(unique_names[0])
+        ax.set_ylabel(unique_names[1])
+        ax.set_title(
+            f"Water Height Comparison - {unique_names[0]} vs {unique_names[1]}"
+        )
+    else:
+        for naam in houtribsluis_df["Naam"].unique():
+            data = houtribsluis_df[houtribsluis_df["Naam"] == naam]
+            ax.plot(
+                data["time"],
+                data["Meetwaarde.Waarde_Numeriek"],
+                label=naam,
+                marker="o",
+                markersize=3,
+                linewidth=1,
+            )
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Meetwaarde")
+        ax.set_title("Water Height (Meetwaarde) - Houtribsluis Locations")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No Houtribsluis data found")
+
 # %%
 locations_pl_coords = locations_pl.select([
     "LocationCode",
