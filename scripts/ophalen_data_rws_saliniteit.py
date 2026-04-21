@@ -2,6 +2,8 @@
 # Imports
 import datetime as dt
 import logging
+import re
+from pathlib import Path
 
 import ddlpy
 import matplotlib.pyplot as plt
@@ -32,8 +34,11 @@ locations_pl = locations_pl.filter(
             | (pl.col("LocationCode").str.contains("kornwerderzand"))
             | (pl.col("LocationCode").str.contains("andijk"))
             | (pl.col("LocationCode").str.contains("waddenzee"))
-            | (pl.col("LocationCode").str.contains("markermeer"))
-            | (pl.col("LocationCode").str.contains("doovebalg"))
+            # | (pl.col("LocationCode").str.contains("markermeer"))
+            # | (pl.col("LocationCode").str.contains("doovebalg"))
+            | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
+            | (pl.col("LocationCode").str.contains("kampen.ijssel"))
+            | (pl.col("LocationCode").str.contains("ijssel.km"))
         )
         & (pl.col("ProcesType") == "meting")
         & (pl.col("Hoedanigheid.Code") == "Cl")
@@ -45,8 +50,11 @@ locations_pl = locations_pl.filter(
             | (pl.col("LocationCode").str.contains("kornwerderzand"))
             | (pl.col("LocationCode").str.contains("andijk"))
             | (pl.col("LocationCode").str.contains("waddenzee"))
-            | (pl.col("LocationCode").str.contains("markermeer"))
-            | (pl.col("LocationCode").str.contains("doovebalg"))
+            # | (pl.col("LocationCode").str.contains("markermeer"))
+            # | (pl.col("LocationCode").str.contains("doovebalg"))
+            | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
+            | (pl.col("LocationCode").str.contains("kampen.ijssel"))
+            | (pl.col("LocationCode").str.contains("ijssel.km"))
         )
         & (pl.col("ProcesType") == "meting")
         & (pl.col("Grootheid.Code") == "SALNTT")
@@ -54,32 +62,28 @@ locations_pl = locations_pl.filter(
 )  # filter for salinity stations
 locations_pl
 # %%
-unique_location_codes = locations_pl["LocationCode"].unique().to_list()
+unique_location_codes = locations_pl["LocationCode"].unique().sort().to_list()
 print(unique_location_codes)
 # %%
 
 bool_stations = locations.index.isin([
-    "andijk",  # -1.5
-    "denoever.ijsselmeer.stevinsluizen.zuid",
-    "denoever.ijsselmeer.vaargeul",
-    "denoever.spuisluis.binnen",
-    "denoever.ijsselmeer.binnenhaven",  # -1.25, -4
-    "denoever.waddenzee.voorhaven.kolk",  # -2, -4
-    "kornwerderzand.ijsselmeer.spui",
-    "kornwerderzand.ijsselmeer.binnenhaven",  # -1.25, -4
-    "kornwerderzand.ijsselmeer.vaargeul",
-    "kornwerderzand.ijsselmeer.spuihavenzuid",
-    "kornwerderzand.ijsselmeer.middelgronden",
-    "kornwerderzand.waddenzee.voorhaven.kolk",  # -2, -4
-    # "friesekust.ijsselmeer",
-    # "wieringen.ijsselmeer.oost", # -1.5
-    # "rotterdamsehoek.ijsselmeer",
-    "markermeer.trintelzand",
-    "markermeer.midden",
-    # "waddenzee.ra",
-    "doovebalg.oost",
-    "doovebalg.west",
-])
+    'andijk',
+    'denoever.ijsselmeer.binnenhaven',
+    'denoever.ijsselmeer.stevinsluizen.zuid',
+    'denoever.ijsselmeer.vaargeul',
+    'denoever.spuisluis.binnen',
+    'denoever.waddenzee.voorhaven.kolk', 
+    'friesekust.ijsselmeer', 
+    'kornwerderzand.ijsselmeer.binnenhaven', 
+    'kornwerderzand.ijsselmeer.middelgronden', 
+    'kornwerderzand.ijsselmeer.spui', 
+    'kornwerderzand.ijsselmeer.spuihavenzuid', 
+    'kornwerderzand.ijsselmeer.vaargeul', 
+    'kornwerderzand.waddenzee.voorhaven.kolk', 
+    'rotterdamsehoek.ijsselmeer', 
+    'waddenzee.ra', 
+    'wieringen.ijsselmeer.oost'])
+
 bool_procestype = locations["ProcesType"].isin(["meting"])
 bool_grootheid_CONC = locations["Grootheid.Code"].isin(["CONCTTE"])  # salinity (SALNTT)
 bool_grootheid_SAL = locations["Grootheid.Code"].isin(["SALNTT"])  # salinity (SALNTT)
@@ -121,8 +125,8 @@ for idx, (index, row) in enumerate(selected.sort_values("Naam").iterrows()):
     print(
         f"{idx + 1}/{len(selected)}: Getting measurements for {station_name} ({grootheid})"
     )
-    print("  Start date: 2018-01-01, End date: 2026-04-01")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2026-04-01")
+    print("  Start date: 2018-01-01, End date: 2026-03-31")
+    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
     print(
         f"  Retrieved {len(measurements):,} measurements for {station_name} ({grootheid})"
     )
@@ -141,11 +145,11 @@ else:
     measurements = pl.DataFrame()
 # %%
 # EXPORT TO PARQUET
-
+# EXPORTED ON 21-04-2026 NO NEED FOR ANOTHER ONE
 TODAY = dt.datetime.now().strftime("%Y%m%d")
 
 measurements.write_parquet(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_{TODAY}.parquet"
+    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_2018_2026_{TODAY}.parquet"
 )
 
 # %%
@@ -154,7 +158,7 @@ TODAY = dt.datetime.now().strftime("%Y%m%d")
 # TODAY = "20260401"  # override for testing
 
 measurements = pl.read_parquet(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_{TODAY}.parquet"
+    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_2018_2026_{TODAY}.parquet"
 )
 
 # Convert bodemhoogte from string to int
@@ -173,21 +177,80 @@ measurements = measurements.with_columns(
     .alias("WaarnemingMetadata.Bemonsteringshoogte")
 )
 
-# %%
+measurements = measurements.filter(
+    pl
+    .col("WaarnemingMetadata.Kwaliteitswaardecode").is_in(["00", "25"])
+    .alias("WaarnemingMetadata.Kwaliteitswaardecode")
+)
+
 measurements.shape
 # %%
-measurements.group_by([
+# Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
+hoogte_col = "WaarnemingMetadata.Bemonsteringshoogte"
+if hoogte_col not in measurements.columns and "WaarnemingsHoogte" in measurements.columns:
+    hoogte_col = "WaarnemingsHoogte"
+
+group_cols = ["Naam", "Grootheid.Code", "Eenheid.Code", hoogte_col]
+
+# Aggregate 10-minute data to daily means per station/parameter/height combination
+measurements_daily = (
+    measurements
+    .with_columns(pl.col("time").cast(pl.Datetime, strict=False).dt.date().alias("time"))
+    .group_by(group_cols + ["time"])
+    .agg(pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("Meetwaarde.Waarde_Numeriek"))
+    .sort(group_cols + ["time"])
+)
+
+output_dir = Path(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\2_external\measurements_RWS_saliniteit_per_combo"
+)
+output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def safe_part(value):
+    value_str = "NA" if value is None else str(value)
+    value_str = value_str.strip().replace(" ", "_")
+    return re.sub(r"[^A-Za-z0-9_.-]", "", value_str)
+
+
+group_keys = measurements_daily.select(group_cols).unique().sort(group_cols)
+print(f"Exporting {len(group_keys)} grouped CSV files to: {output_dir}")
+
+for row in group_keys.iter_rows(named=True):
+    filter_expr = (
+        (pl.col("Naam") == row["Naam"])
+        & (pl.col("Grootheid.Code") == row["Grootheid.Code"])
+        & (pl.col("Eenheid.Code") == row["Eenheid.Code"])
+    )
+
+    if row[hoogte_col] is None:
+        filtered = measurements_daily.filter(filter_expr & pl.col(hoogte_col).is_null())
+    else:
+        filtered = measurements_daily.filter(
+            filter_expr & (pl.col(hoogte_col) == row[hoogte_col])
+        )
+
+    out_name = (
+        f"{safe_part(row['Naam'])}"
+        f"_{safe_part(row['Grootheid.Code'])}"
+        f"_{safe_part(row['Eenheid.Code'])}"
+        f"_{safe_part(row[hoogte_col])}_daily_ddl_wq.csv"
+    )
+    filtered.write_csv(output_dir / out_name, separator=";")
+
+print("Done exporting grouped CSV files.")
+# %%
+measurements_daily.group_by([
     "Naam",
     "Grootheid.Code",
     "WaarnemingMetadata.Bemonsteringshoogte",
-]).agg(pl.count()).sort("count", descending=True)
-# %%
-measurements
+]).agg(pl.len()).sort("len", descending=True)
 
+measurements_daily
 # %%
 # Completeness check: years as columns, count of Meetwaarde values per location
 completeness = (
-    measurements
+    measurements_daily
     .with_columns(
         pl.col("time").cast(pl.Date).cast(pl.String).str.slice(0, 4).alias("Year")
     )
@@ -206,7 +269,7 @@ completeness
 # %%
 # Generate median, 90th percentile, and 10th percentile per Naam
 percentile_stats = (
-    measurements
+    measurements_daily
     .group_by([
         "Naam",
         "Grootheid.Code",
@@ -214,6 +277,7 @@ percentile_stats = (
         "WaarnemingMetadata.Bemonsteringshoogte",
     ])
     .agg(
+        pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("mean"),
         pl.col("Meetwaarde.Waarde_Numeriek").median().alias("median"),
         pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.90).alias("p90"),
         pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.10).alias("p10"),
@@ -226,55 +290,66 @@ percentile_stats = (
     ])
 )
 percentile_stats
-
 # %%
-
 # Plot time series of Meetwaarde for each station
 sns.set_style("whitegrid")
 
-num_plots = len(measurements["Naam"].unique())
+num_plots = len(measurements_daily["Naam"].unique())
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
 
 if num_plots == 1:
     axes = [axes]
 
-for idx, naam in enumerate(measurements["Naam"].unique().sort()):
-    print(f"({idx + 1}/{num_plots}) Plotting time series for station: {naam}")
-    data = measurements.filter(pl.col("Naam") == naam)
+for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
+    print(f"({idx + 1}/{num_plots}) Plotting daily mean time series for station: {naam}")
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
+    data_pd = data_sorted.to_pandas()
+    data_pd["WaarnemingMetadata.Bemonsteringshoogte"] = (
+        data_pd["WaarnemingMetadata.Bemonsteringshoogte"].astype(str)
+    )
     sns.lineplot(
-        data=data_sorted.to_pandas(),
+        data=data_pd,
         x="time",
         y="Meetwaarde.Waarde_Numeriek",
+        hue="WaarnemingMetadata.Bemonsteringshoogte",
         ax=axes[idx],
     )
-    axes[idx].set_xlabel("Date")
-    axes[idx].set_ylabel("Meetwaarde")
+    axes[idx].set_xlabel("")
+    axes[idx].set_ylabel("Meetwaarde (daily mean)")
     axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
-    axes[idx].set_title(f"Meetwaarde over Time - {naam}")
-    axes[idx].tick_params(axis="x", rotation=45)
+    axes[idx].set_title(f"Daily Mean Meetwaarde over Time - {naam}")
+    axes[idx].tick_params(axis="x")
+    axes[idx].legend(title="Bemonsteringshoogte")
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\time_series_daily_mean_meetwaarde_per_station.png",
+             dpi=300
+)
 plt.show()
+
+# %%
+measurements_daily
 
 # %%
 
 # Plot seasonal median values (summer vs winter) for each station
 sns.set_style("whitegrid")
 
-num_plots = len(measurements["Naam"].unique())
+num_plots = len(measurements_daily["Naam"].unique())
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
 
 if num_plots == 1:
     axes = [axes]
 
-for idx, naam in enumerate(measurements["Naam"].unique().sort()):
+for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     print(
         f"({idx + 1}/{num_plots}) Plotting seasonal median time series for station: {naam}"
     )
-    data = measurements.filter(pl.col("Naam") == naam)
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
+    data_pd[hoogte_col] = data_pd[hoogte_col].astype(str)
 
     # Add year and month columns
     data_pd["year"] = data_pd["time"].dt.year
@@ -304,40 +379,40 @@ for idx, naam in enumerate(measurements["Naam"].unique().sort()):
     # Calculate median per year and season
     seasonal_median = (
         seasonal_data
-        .groupby(["year", "season"])["Meetwaarde.Waarde_Numeriek"]
+        .groupby(["year", "season", hoogte_col])["Meetwaarde.Waarde_Numeriek"]
         .median()
         .reset_index()
     )
 
-    # Plot summer and winter separately
-    summer_data = seasonal_median[seasonal_median["season"] == "Summer"]
-    winter_data = seasonal_median[seasonal_median["season"] == "Winter"]
+    if seasonal_median.empty:
+        axes[idx].set_title(f"Seasonal Median by Bemonsteringshoogte - {naam} (no data)")
+        axes[idx].grid(True, alpha=0.3)
+        continue
 
-    axes[idx].plot(
-        summer_data["year"],
-        summer_data["Meetwaarde.Waarde_Numeriek"],
-        label="Summer",
-        marker="o",
-        linewidth=1.5,
-        markersize=6,
-    )
-    axes[idx].plot(
-        winter_data["year"],
-        winter_data["Meetwaarde.Waarde_Numeriek"],
-        label="Winter",
-        marker="s",
-        linewidth=1.5,
-        markersize=6,
+    sns.lineplot(
+        data=seasonal_median,
+        x="year",
+        y="Meetwaarde.Waarde_Numeriek",
+        hue=hoogte_col,
+        style="season",
+        markers=True,
+        dashes=False,
+        ax=axes[idx],
     )
 
-    axes[idx].set_xlabel("Year")
+    axes[idx].set_xlabel("")
     axes[idx].set_ylabel("Meetwaarde (Median)")
-    axes[idx].set_title(f"Seasonal Median - {naam}")
-    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2025, 4, 1))
-    axes[idx].legend()
+    axes[idx].set_title(f"Seasonal Median by Bemonsteringshoogte - {naam}")
+    year_min = int(seasonal_median["year"].min())
+    year_max = int(seasonal_median["year"].max())
+    axes[idx].set_xlim(year_min - 0.5, year_max + 0.5)
+    axes[idx].legend(title="Hoogte / Season")
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\seasonal_median_meetwaarde_per_station.png",
+             dpi=300
+)
 plt.show()
 
 # %%
@@ -345,47 +420,61 @@ plt.show()
 # Plot median values for each station using monthly medians to smooth the data
 sns.set_style("whitegrid")
 
-num_plots = len(measurements["Naam"].unique())
+num_plots = len(measurements_daily["Naam"].unique())
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
 
 if num_plots == 1:
     axes = [axes]
 
-for idx, naam in enumerate(measurements["Naam"].unique().sort()):
+for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     print(
         f"({idx + 1}/{num_plots}) Plotting monthly median time series for station: {naam}"
     )
-    data = measurements.filter(pl.col("Naam") == naam)
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
+    data_pd[hoogte_col] = data_pd[hoogte_col].astype(str)
 
     # Calculate monthly median values
     data_pd["year_month"] = data_pd["time"].dt.to_period("M")
-    monthly_median = data_pd.groupby("year_month")[
-        "Meetwaarde.Waarde_Numeriek"
-    ].median()
-    monthly_median.index = monthly_median.index.to_timestamp()
-
-    axes[idx].plot(
-        monthly_median.index,
-        monthly_median.values,
-        marker="o",
-        markersize=4,
-        linewidth=1.5,
+    monthly_median = (
+        data_pd
+        .groupby(["year_month", hoogte_col])["Meetwaarde.Waarde_Numeriek"]
+        .median()
+        .reset_index()
     )
-    axes[idx].set_xlabel("Date")
+    monthly_median["year_month"] = monthly_median["year_month"].dt.to_timestamp()
+
+    if monthly_median.empty:
+        axes[idx].set_title(f"Meetwaarde Median per Month - {naam} (no data)")
+        axes[idx].grid(True, alpha=0.3)
+        continue
+
+    sns.lineplot(
+        data=monthly_median,
+        x="year_month",
+        y="Meetwaarde.Waarde_Numeriek",
+        hue=hoogte_col,
+        marker="o",
+        ax=axes[idx],
+    )
+    axes[idx].set_xlabel("")
     axes[idx].set_ylabel("Meetwaarde (Median)")
-    axes[idx].set_title(f"Meetwaarde Median per Month - {naam}")
+    axes[idx].set_title(f"Meetwaarde Median per Month by Bemonsteringshoogte - {naam}")
     axes[idx].tick_params(axis="x", rotation=45)
-    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2025, 4, 1))
+    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
+    axes[idx].legend(title="Bemonsteringshoogte")
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_per_station.png",
+             dpi=300
+)
 plt.show()
 
 # %%
 import pandas as pd
 
-measurements_a = measurements.with_columns(
+measurements_a = measurements_daily.with_columns(
     pl.col("time").dt.strftime("%Y-%m").alias("year_month")
 )
 measurements_a = measurements_a.with_columns(
@@ -440,7 +529,7 @@ for combo in combinations:
         (pl.col("Naam") == naam)
         & (pl.col("Grootheid.Code") == grootheid_code)
         & (pl.col("Eenheid.Code") == eenheid_code)
-        & (pl.col("WaarnemingMetadata.Kwaliteitswaardecode").is_in(["00", "03"]))
+        # & (pl.col("WaarnemingMetadata.Kwaliteitswaardecode").is_in(["00", "03"]))
     )
 
     if len(data) == 0:
@@ -511,6 +600,7 @@ for combo in combinations:
     plot_idx += 1
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_boxplot_per_station.png", dpi=300)
 plt.show()
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
@@ -518,17 +608,17 @@ sns.set_style("whitegrid")
 
 colors = plt.cm.plasma(np.linspace(0.3, 1, 10))
 
-num_plots = len(measurements["Naam"].unique())
+num_plots = len(measurements_daily["Naam"].unique())
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
 
 if num_plots == 1:
     axes = [axes]
 
-for idx, naam in enumerate(measurements["Naam"].unique().sort()):
+for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     print(
         f"({idx + 1}/{num_plots}) Plotting monthly median time series with yearly colors for station: {naam}"
     )
-    data = measurements.filter(pl.col("Naam") == naam)
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
 
@@ -562,11 +652,12 @@ for idx, naam in enumerate(measurements["Naam"].unique().sort()):
     axes[idx].set_ylabel("Monthly Median Meetwaarde")
     axes[idx].set_title(f"Monthly Median Meetwaarde by Month (1 year cycle) - {naam}")
     axes[idx].set_xticks(range(1, 13))
-    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2025, 4, 1))
+    axes[idx].set_xlim(1, 12)
     axes[idx].legend(title="Year", bbox_to_anchor=(1.05, 1), loc="upper left")
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_by_month_yearly_colors_per_station.png", dpi=300)
 plt.show()
 
 # %%
@@ -575,17 +666,17 @@ sns.set_style("whitegrid")
 
 colors = plt.cm.plasma(np.linspace(0.3, 1, 10))
 
-num_plots = len(measurements["Naam"].unique())
+num_plots = len(measurements_daily["Naam"].unique())
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
 
 if num_plots == 1:
     axes = [axes]
 
-for idx, naam in enumerate(measurements["Naam"].unique().sort()):
+for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     print(
         f"({idx + 1}/{num_plots}) Plotting monthly median time series with yearly colors and confidence intervals for station: {naam}"
     )
-    data = measurements.filter(pl.col("Naam") == naam)
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
 
@@ -648,6 +739,7 @@ for idx, naam in enumerate(measurements["Naam"].unique().sort()):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_by_month_yearly_colors_ci_per_station.png", dpi=300)
 plt.show()
 # %%
 # Plot showing 1 subplot per year with each location plotted
@@ -655,12 +747,12 @@ sns.set_style("whitegrid")
 
 colors = plt.cm.tab20(np.linspace(0, 1, 20))
 
-measurements = measurements.with_columns(pl.col("time").dt.year().alias("year"))
-measurements = measurements.with_columns(pl.col("time").dt.month().alias("month"))
+measurements_daily = measurements_daily.with_columns(pl.col("time").dt.year().alias("year"))
+measurements_daily = measurements_daily.with_columns(pl.col("time").dt.month().alias("month"))
 
 # Get unique years and locations
-unique_years = sorted(measurements["year"].unique().to_list())
-unique_names = sorted(measurements["Naam"].unique().to_list())
+unique_years = sorted(measurements_daily["year"].unique().to_list())
+unique_names = sorted(measurements_daily["Naam"].unique().to_list())
 
 num_plots = len(unique_years)
 fig, axes = plt.subplots(num_plots, 1, figsize=(14, 5 * num_plots))
@@ -669,7 +761,7 @@ if num_plots == 1:
     axes = [axes]
 
 for year_idx, year in enumerate(unique_years):
-    year_data = measurements.filter(pl.col("year") == year)
+    year_data = measurements_daily.filter(pl.col("year") == year)
 
     # Plot each location with different color
     for loc_idx, naam in enumerate(unique_names):
@@ -702,6 +794,7 @@ for year_idx, year in enumerate(unique_years):
     axes[year_idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_mean_meetwaarde_by_location_yearly_subplots.png", dpi=300)
 plt.show()
 # %%
 # X-Y plot for Houtribsluis locations
@@ -880,7 +973,7 @@ for idx, (_, row) in enumerate(locations_df.iterrows()):
 
 # Add OpenStreetMap basemap
 ax.set_xlim(4.95, 5.7)
-ax.set_ylim(52.35, 53.2)
+ax.set_ylim(52.5, 53.15)
 add_basemap(
     ax,
     crs="EPSG:4258",
@@ -904,3 +997,177 @@ locations_df_pivot = locations_df.pivot_table(
 locations_df_pivot
 # %%
 locations_df
+# %%
+# Boxplots per location with sampling height and parameter differentiation
+sns.set_style("whitegrid")
+
+num_plots = len(measurements_daily["Naam"].unique())
+fig, axes = plt.subplots(num_plots, 1, figsize=(14, 5 * num_plots))
+
+if num_plots == 1:
+    axes = [axes]
+
+for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
+    print(f"({idx + 1}/{num_plots}) Plotting boxplot for station: {naam}")
+    data = measurements_daily.filter(pl.col("Naam") == naam)
+    data_pd = data.to_pandas()
+    
+    # Convert height to string for categorical display
+    data_pd[hoogte_col] = data_pd[hoogte_col].astype(str)
+    
+    # Sort by height for better visualization
+    height_order = sorted(data_pd[hoogte_col].unique(), key=float)
+    
+    # Create boxplot with height on x-axis and hue for different parameters
+    sns.boxplot(
+        data=data_pd,
+        x=hoogte_col,
+        y="Meetwaarde.Waarde_Numeriek",
+        hue="Grootheid.Code",
+        ax=axes[idx],
+        palette="Set2",
+        order=height_order,
+    )
+    
+    axes[idx].set_xlabel("Sampling Height (m)")
+    axes[idx].set_ylabel("Meetwaarde")
+    axes[idx].set_title(f"Measurement Distribution by Height and Parameter - {naam}")
+    axes[idx].tick_params(axis="x", rotation=45)
+    axes[idx].legend(title="Parameter", bbox_to_anchor=(1.05, 1), loc="upper left")
+    axes[idx].grid(True, alpha=0.3, axis="y")
+
+plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\boxplot_meetwaarde_by_height_parameter_per_location.png",
+    dpi=300
+)
+plt.show()
+
+# %%
+# Boxplots per parameter, with all Naam + Bemonsteringshoogte combinations colored differently
+sns.set_style("whitegrid")
+
+unique_locations = sorted(measurements_daily["Naam"].unique().to_list())
+unique_parameters = sorted(measurements_daily["Grootheid.Code"].unique().to_list())
+
+num_params = len(unique_parameters)
+fig, axes = plt.subplots(num_params, 1, figsize=(10, 6 * num_params))
+
+if num_params == 1:
+    axes = [axes]
+
+for param_idx, param in enumerate(unique_parameters):
+    print(f"({param_idx + 1}/{num_params}) Plotting boxplot for parameter: {param}")
+    
+    param_data = measurements_daily.filter(pl.col("Grootheid.Code") == param).to_pandas()
+    
+    if len(param_data) == 0:
+        axes[param_idx].text(0.5, 0.5, "No data", ha="center", va="center")
+        axes[param_idx].set_title(f"{param} - No data")
+        continue
+    
+    # Create a label combining Naam and Bemonsteringshoogte
+    param_data["Location_Height"] = (
+        param_data["Naam"] + " @ " + param_data[hoogte_col].astype(str) + "m"
+    )
+    
+    # Sort by location and height for better visualization
+    param_data_sorted = param_data.sort_values(["Naam", hoogte_col])
+    location_height_order = sorted(param_data_sorted["Location_Height"].unique())
+    
+    # Create palette for all location+height combinations
+    palette = sns.color_palette("husl", n_colors=len(location_height_order))
+    
+    # Create boxplot
+    sns.boxplot(
+        data=param_data_sorted,
+        y="Location_Height",
+        x="Meetwaarde.Waarde_Numeriek",
+        ax=axes[param_idx],
+        palette=palette,
+        order=location_height_order,
+    )
+    
+    axes[param_idx].set_ylabel("Location @ Height")
+    axes[param_idx].set_xlabel("Meetwaarde")
+    axes[param_idx].set_title(f"Parameter: {param}")
+    axes[param_idx].tick_params(axis="y", rotation=0)
+    axes[param_idx].grid(True, alpha=0.3, axis="x")
+
+plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\boxplot_per_parameter_all_locations_heights.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+plt.show()
+# %%
+# Create interactive map with leaflet (folium)
+# Calculate center of map
+center_lat = locations_df["Lat"].mean()
+center_lon = locations_df["Lon"].mean()
+
+# Create folium map
+m = folium.Map(
+    location=[center_lat, center_lon],
+    zoom_start=10,
+    tiles="OpenStreetMap"
+)
+
+# Normalize median values for color mapping
+min_median = locations_df["median"].min()
+max_median = locations_df["median"].max()
+locations_df["median_normalized"] = (locations_df["median"] - min_median) / (max_median - min_median)
+
+# Add markers for each location
+for idx, (_, row) in enumerate(locations_df.iterrows()):
+    # Color based on median value (viridis colormap)
+    color_val = row["median_normalized"]
+    # Viridis colormap approximation
+    if color_val < 0.25:
+        color = "purple"
+    elif color_val < 0.5:
+        color = "blue"
+    elif color_val < 0.75:
+        color = "green"
+    else:
+        color = "yellow"
+    
+    popup_text = f"""
+    <b>{row['Naam']}</b><br>
+    Parameter: {row['Grootheid.Code']}<br>
+    Median: {row['median']:.2f} {row['Eenheid.Code']}<br>
+    Height: {row['WaarnemingMetadata.Bemonsteringshoogte']}m
+    """
+    
+    folium.CircleMarker(
+        location=[row["Lat"], row["Lon"]],
+        radius=10,
+        popup=folium.Popup(popup_text, max_width=300),
+        color=color,
+        fill=True,
+        fillColor=color,
+        fillOpacity=0.7,
+        weight=2
+    ).add_to(m)
+
+# Add a color scale legend
+legend_html = """
+<div style="position: fixed; 
+     bottom: 50px; right: 50px; width: 200px; height: 150px; 
+     background-color: white; border:2px solid grey; z-index:9999; 
+     font-size:12px; padding: 10px">
+     <p style="margin: 0;"><b>Salinity Levels</b></p>
+     <p style="margin: 5px 0;"><i style="background:purple;width:20px;height:20px;display:inline-block;"></i> Low</p>
+     <p style="margin: 5px 0;"><i style="background:blue;width:20px;height:20px;display:inline-block;"></i> Low-Mid</p>
+     <p style="margin: 5px 0;"><i style="background:green;width:20px;height:20px;display:inline-block;"></i> Mid-High</p>
+     <p style="margin: 5px 0;"><i style="background:yellow;width:20px;height:20px;display:inline-block;"></i> High</p>
+</div>
+"""
+# Save interactive map
+m.save(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\interactive_map_salinity_locations.html")
+print("Interactive map saved to: interactive_map_salinity_locations.html")
+from IPython.display import display
+
+display(m)
+# %%
