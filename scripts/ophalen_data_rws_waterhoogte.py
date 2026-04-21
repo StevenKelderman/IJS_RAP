@@ -26,7 +26,9 @@ locations_pl = locations_pl.filter(
         | (pl.col("LocationCode").str.contains("kornwerderzand"))
         | (pl.col("LocationCode").str.contains("krabbersgat"))
         | (pl.col("LocationCode").str.contains("houtrib"))
-        | (pl.col("LocationCode").str.contains("markermeer"))
+        | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
+        | (pl.col("LocationCode").str.contains("kampen.ijssel"))
+        | (pl.col("LocationCode").str.contains("ijssel.km"))
     )
     & (pl.col("ProcesType") == "meting")
     & (pl.col("Grootheid.Code") == "WATHTE")
@@ -43,30 +45,57 @@ print(unique_location_codes)
 
 bool_stations = locations.index.isin([
     "enkhuizen.ijsselmeer.oost.meetpaal1",
-    "markerwaarddijk.ijsselmeer.zuidwest.meetpaal37",
-    "denoever.waddenzee.voorhaven",
-    "krabbersgat.markermeer",
-    "kornwerderzand.waddenzee.buitenhaven",
-    "urk.ijsselmeer.oost.meetpaal2",
-    "stavoren.ijsselmeer",
-    "rotterdamsehoek.ijsselmeer",
+    "ijssel.km880p0.linkeroever",
     "oudezeug.ijsselmeer.midden.noord.meetpaal47",
-    "krabbersgat.ijsselmeer",
-    "markermeer.midden",
-    "markermeer.trintelzand",
-    "oudemirdum.ijsselmeer.noordoost.meetpaalfl05",
-    "enkhuizen.ijsselmeer.oost.meetpaal2",
-    "urk.ijsselmeer.zuid.meetpaal46",
-    "kornwerderzand.ijsselmeer.binnenhaven",
-    "lelystad.houtribsluis.noord",
-    "lelystad.houtribsluis.zuid",
-    "lemmer.ijsselmeer.woudagemaal",
-    "denoever.ijsselmeer.binnenhaven",
-    "oudemirdum.ijsselmeer.noordoost.meetpaal9",
-    "oudezeug.ijsselmeer.midden.noord.meetpaal49",
-    "lemmer.ijsselmeer",
     "oudezeug.ijsselmeer.midden.noord.meetpaal48",
-    "markermeer.midden.meetpaal42",
+    "ijssel.km881p2.rechteroever",
+    "ijssel.km912p0.linkeroever",
+    "ijssel.km878p8.rechteroever.c",
+    "enkhuizen.ijsselmeer.oost.meetpaal2",
+    "ijssel.km880p0.rechteroever",
+    "ijssel.km884p1.rechteroever",
+    "krabbersgat.ijsselmeer",
+    "ijssel.km879p0.linkeroever",
+    "ijssel.km879p6.rechteroever.a",
+    "ijssel.km935p1.linkeroever",
+    "lemmer.ijsselmeer",
+    "lelystad.houtribsluis.zuid",
+    "krabbersgat.markermeer",
+    "ijssel.km939p9.rechteroever",
+    "lemmer.ijsselmeer.woudagemaal",
+    "ijssel.km879p5.linkeroever",
+    "stavoren.ijsselmeer",
+    "ijssel.km878p3.rechteroever.c",
+    "denoever.waddenzee.voorhaven",
+    "urk.ijsselmeer.oost.meetpaal2",
+    "kornwerderzand.waddenzee.buitenhaven",
+    "ijssel.km880p1.rechteroever.a",
+    "ijssel.km961p0.linkeroever",
+    "markerwaarddijk.ijsselmeer.zuidwest.meetpaal37",
+    "ijssel.km879p6.rechteroever.b",
+    "ijssel.km878p8.rechteroever.b",
+    "ijssel.km975p0.linkeroever",
+    "ijssel.km970p0.linkeroever",
+    "ijssel.km949p9.linkeroever",
+    "kampen.ijssel",
+    "ijssel.km880p1.rechteroever.c",
+    "ijssel.km878p3.rechteroever.a",
+    "ijssel.km878p8.rechteroever.a",
+    "oudemirdum.ijsselmeer.noordoost.meetpaalfl05",
+    "urk.ijsselmeer.zuid.meetpaal46",
+    "zwolle.ijssel",
+    "rotterdamsehoek.ijsselmeer",
+    "denoever.ijsselmeer.binnenhaven",
+    "ijssel.km880p2.linkeroever",
+    "oudezeug.ijsselmeer.midden.noord.meetpaal49",
+    "ijssel.km878p3.rechteroever.b",
+    "kornwerderzand.ijsselmeer.binnenhaven",
+    "ijssel.km879p5.rechteroever",
+    "lelystad.houtribsluis.noord",
+    "ijssel.km985p0.linkeroever",
+    "oudemirdum.ijsselmeer.noordoost.meetpaal9",
+    "ijssel.km879p6.rechteroever.c",
+    "ijssel.km879p0.rechteroever",
     "ijsselmeer.midden.meetpaal26",
 ])
 bool_procestype = locations["ProcesType"].isin(["meting"])
@@ -119,10 +148,14 @@ measurements.write_parquet(
 # %%
 measurements.shape
 # %%
-measurements.group_by("Naam").agg(pl.count()).sort("count", descending=True)
+measurements.group_by("Naam").agg(pl.len()).sort("len", descending=True)
 
 # %%
-measurements.plot(y="Meetwaarde.Waarde_Numeriek", linewidth=0.5, figsize=(12, 6))
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(12, 6))
+plt.plot(measurements["Meetwaarde.Waarde_Numeriek"], linewidth=0.5)
+plt.show()
 
 # %%
 measurements
