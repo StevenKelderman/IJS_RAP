@@ -2,6 +2,8 @@
 # enabling debug logging so we can see what happens in the background
 import datetime as dt
 import logging
+import re
+from pathlib import Path
 
 import ddlpy
 import polars as pl
@@ -40,63 +42,32 @@ locations_pl = locations_pl.filter(
 locations_pl
 # %%
 unique_location_codes = locations_pl["LocationCode"].unique().to_list()
+unique_location_codes.sort()
 print(unique_location_codes)
 # %%
 
 bool_stations = locations.index.isin([
-    "enkhuizen.ijsselmeer.oost.meetpaal1",
-    "ijssel.km880p0.linkeroever",
-    "oudezeug.ijsselmeer.midden.noord.meetpaal47",
-    "oudezeug.ijsselmeer.midden.noord.meetpaal48",
-    "ijssel.km881p2.rechteroever",
-    "ijssel.km912p0.linkeroever",
-    "ijssel.km878p8.rechteroever.c",
-    "enkhuizen.ijsselmeer.oost.meetpaal2",
-    "ijssel.km880p0.rechteroever",
-    "ijssel.km884p1.rechteroever",
-    "krabbersgat.ijsselmeer",
-    "ijssel.km879p0.linkeroever",
-    "ijssel.km879p6.rechteroever.a",
-    "ijssel.km935p1.linkeroever",
-    "lemmer.ijsselmeer",
-    "lelystad.houtribsluis.zuid",
-    "krabbersgat.markermeer",
-    "ijssel.km939p9.rechteroever",
-    "lemmer.ijsselmeer.woudagemaal",
-    "ijssel.km879p5.linkeroever",
-    "stavoren.ijsselmeer",
-    "ijssel.km878p3.rechteroever.c",
-    "denoever.waddenzee.voorhaven",
-    "urk.ijsselmeer.oost.meetpaal2",
-    "kornwerderzand.waddenzee.buitenhaven",
-    "ijssel.km880p1.rechteroever.a",
-    "ijssel.km961p0.linkeroever",
-    "markerwaarddijk.ijsselmeer.zuidwest.meetpaal37",
-    "ijssel.km879p6.rechteroever.b",
-    "ijssel.km878p8.rechteroever.b",
-    "ijssel.km975p0.linkeroever",
-    "ijssel.km970p0.linkeroever",
-    "ijssel.km949p9.linkeroever",
-    "kampen.ijssel",
-    "ijssel.km880p1.rechteroever.c",
-    "ijssel.km878p3.rechteroever.a",
-    "ijssel.km878p8.rechteroever.a",
-    "oudemirdum.ijsselmeer.noordoost.meetpaalfl05",
-    "urk.ijsselmeer.zuid.meetpaal46",
-    "zwolle.ijssel",
-    "rotterdamsehoek.ijsselmeer",
-    "denoever.ijsselmeer.binnenhaven",
-    "ijssel.km880p2.linkeroever",
-    "oudezeug.ijsselmeer.midden.noord.meetpaal49",
-    "ijssel.km878p3.rechteroever.b",
-    "kornwerderzand.ijsselmeer.binnenhaven",
-    "ijssel.km879p5.rechteroever",
-    "lelystad.houtribsluis.noord",
-    "ijssel.km985p0.linkeroever",
-    "oudemirdum.ijsselmeer.noordoost.meetpaal9",
-    "ijssel.km879p6.rechteroever.c",
-    "ijssel.km879p0.rechteroever",
-    "ijsselmeer.midden.meetpaal26",
+    'denoever.ijsselmeer.binnenhaven',
+      'denoever.waddenzee.voorhaven',
+        'enkhuizen.ijsselmeer.oost.meetpaal1',
+          'enkhuizen.ijsselmeer.oost.meetpaal2',
+                    'ijsselmeer.midden.meetpaal26',
+                      'kampen.ijssel', 'kornwerderzand.ijsselmeer.binnenhaven', 
+                      'kornwerderzand.waddenzee.buitenhaven',
+                        'krabbersgat.ijsselmeer', 'krabbersgat.markermeer', 
+                        'lelystad.houtribsluis.noord', 'lelystad.houtribsluis.zuid',
+                          'lemmer.ijsselmeer', 'lemmer.ijsselmeer.woudagemaal', 
+                          'markerwaarddijk.ijsselmeer.zuidwest.meetpaal37',
+                            'oudemirdum.ijsselmeer.noordoost.meetpaal9',
+                              'oudemirdum.ijsselmeer.noordoost.meetpaalfl05',
+                                'oudezeug.ijsselmeer.midden.noord.meetpaal47',
+                                  'oudezeug.ijsselmeer.midden.noord.meetpaal48',
+                                    'oudezeug.ijsselmeer.midden.noord.meetpaal49',
+                                      'rotterdamsehoek.ijsselmeer', 
+                                      'stavoren.ijsselmeer',
+                                        'urk.ijsselmeer.oost.meetpaal2',
+                                          'urk.ijsselmeer.zuid.meetpaal46', 
+                                          'zwolle.ijssel',
 ])
 bool_procestype = locations["ProcesType"].isin(["meting"])
 bool_grootheid = locations["Grootheid.Code"].isin(["WATHTE"])
@@ -123,8 +94,8 @@ print(f"Starting processing of {len(selected)} stations...")
 for idx, (index, row) in enumerate(selected.iterrows()):
     station_name = row["Naam"]
     print(f"({idx + 1}/{len(selected)}) Getting measurements for {station_name}")
-    print("  Start date: 2018-01-01, End date: 2025-04-01")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2025-04-01")
+    print("  Start date: 2018-01-01, End date: 2026-03-31")
+    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
     print(f"  Retrieved {len(measurements)} measurements for {station_name}")
     all_measurements.append(measurements)
 print(f"Completed processing of all {len(selected)} stations")
@@ -143,10 +114,56 @@ else:
 TODAY = dt.datetime.now().strftime("%Y%m%d")
 
 measurements.write_parquet(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_waterhoogte_{TODAY}.parquet"
+        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_waterhoogte_2018_2026_{TODAY}.parquet"
 )
-# %%
 measurements.shape
+
+# %%
+# Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
+
+group_cols = ["Naam", "Grootheid.Code", "Eenheid.Code"]
+
+# Aggregate 10-minute data to daily means per station/parameter/height combination
+measurements_daily = (
+    measurements
+    .with_columns(pl.col("time").cast(pl.Datetime, strict=False).dt.date().alias("time"))
+    .group_by(group_cols + ["time"])
+    .agg(pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("Meetwaarde.Waarde_Numeriek"))
+    .sort(group_cols + ["time"])
+)
+
+output_dir = Path(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\2_external\measurements_RWS_waterhoogte_per_combo"
+)
+output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def safe_part(value):
+    value_str = "NA" if value is None else str(value)
+    value_str = value_str.strip().replace(" ", "_")
+    return re.sub(r"[^A-Za-z0-9_.-]", "", value_str)
+
+
+group_keys = measurements_daily.select(group_cols).unique().sort(group_cols)
+print(f"Exporting {len(group_keys)} grouped CSV files to: {output_dir}")
+
+for row in group_keys.iter_rows(named=True):
+    filter_expr = (
+        (pl.col("Naam") == row["Naam"])
+        & (pl.col("Grootheid.Code") == row["Grootheid.Code"])
+        & (pl.col("Eenheid.Code") == row["Eenheid.Code"])
+    )
+
+    filtered = measurements_daily.filter(filter_expr)
+
+    out_name = (
+        f"{safe_part(row['Naam'])}"
+        f"_{safe_part(row['Grootheid.Code'])}"
+        f"_{safe_part(row['Eenheid.Code'])}_daily_ddl_wq.csv"
+    )
+    filtered.write_csv(output_dir / out_name, separator=";")
+
+print("Done exporting grouped CSV files.")
 # %%
 measurements.group_by("Naam").agg(pl.len()).sort("len", descending=True)
 
