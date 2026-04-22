@@ -2,8 +2,12 @@
 # enabling debug logging so we can see what happens in the background
 import datetime as dt
 import logging
+import re
+from pathlib import Path
 
+import folium
 import ddlpy
+import matplotlib.pyplot as plt
 import polars as pl
 
 logging.basicConfig()
@@ -28,7 +32,6 @@ locations_pl = locations_pl.filter(
         | (pl.col("LocationCode").str.contains("houtrib"))
         | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
         | (pl.col("LocationCode").str.contains("kampen.ijssel"))
-        | (pl.col("LocationCode").str.contains("ijssel.km"))
     )
     & (pl.col("Grootheid.Code") == "Q")
 )
@@ -36,15 +39,16 @@ locations_pl = locations_pl.filter(
 locations_pl
 # %%
 unique_location_codes = locations_pl["LocationCode"].unique().to_list()
+unique_location_codes.sort()
 print(unique_location_codes)
 # %%
 
 bool_stations = locations.index.isin([
-    "krabbersgat.ijsselmeer",
-    "kornwerderzand.waddenzee.buitenhaven",
-    "lelystad.houtribsluis.noord",
-    "denoever.waddenzee.voorhaven",
-])
+    'denoever.waddenzee.voorhaven',
+    'kornwerderzand.waddenzee.buitenhaven',
+    'krabbersgat.ijsselmeer',
+    'lelystad.houtribsluis.noord'
+    ])
 bool_grootheid = locations["Grootheid.Code"].isin(["Q"])
 
 selected = locations.loc[bool_stations & bool_grootheid]
@@ -59,8 +63,8 @@ print(f"Starting processing of {len(selected)} stations...")
 for idx, (index, row) in enumerate(selected.iterrows()):
     station_name = row["Naam"]
     print(f"({idx + 1}/{len(selected)}) Getting measurements for {station_name}")
-    print("  Start date: 2018-01-01, End date: 2025-04-01")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2025-04-01")
+    print("  Start date: 2018-01-01, End date: 2026-03-31")
+    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
     print(f"  Retrieved {len(measurements)} measurements for {station_name}")
     all_measurements.append(measurements)
 print(f"Completed processing of all {len(selected)} stations")
@@ -73,40 +77,121 @@ if converted_measurements:
     measurements = pl.concat(converted_measurements)
 else:
     measurements = pl.DataFrame()
+
+measurements
 # %%
 # EXPORT TO PARQUET
 
 TODAY = dt.datetime.now().strftime("%Y%m%d")
 
 measurements.write_parquet(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_debiet_{TODAY}.parquet"
+    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_debiet_2018_2026_{TODAY}.parquet"
 )
 # %%
-measurements.shape
+# Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
+
+group_cols = ["Naam", "Grootheid.Code", "Eenheid.Code"]
+
+# Aggregate 10-minute data to daily means per station/parameter/height combination
+measurements_daily = (
+    measurements
+    .with_columns(pl.col("time").cast(pl.Datetime, strict=False).dt.date().alias("time"))
+    .group_by(group_cols + ["time"])
+    .agg(pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("Meetwaarde.Waarde_Numeriek"))
+    .sort(group_cols + ["time"])
+)
+
+output_dir = Path(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\2_external\measurements_RWS_debiet_per_combo"
+)
+output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def safe_part(value):
+    value_str = "NA" if value is None else str(value)
+    value_str = value_str.strip().replace(" ", "_")
+    return re.sub(r"[^A-Za-z0-9_.-]", "", value_str)
+
+
+group_keys = measurements_daily.select(group_cols).unique().sort(group_cols)
+print(f"Exporting {len(group_keys)} grouped CSV files to: {output_dir}")
+
+for row in group_keys.iter_rows(named=True):
+    filter_expr = (
+        (pl.col("Naam") == row["Naam"])
+        & (pl.col("Grootheid.Code") == row["Grootheid.Code"])
+        & (pl.col("Eenheid.Code") == row["Eenheid.Code"])
+    )
+
+    filtered = measurements_daily.filter(filter_expr)
+
+    out_name = (
+        f"{safe_part(row['Naam'])}"
+        f"_{safe_part(row['Grootheid.Code'])}"
+        f"_{safe_part(row['Eenheid.Code'])}_daily_ddl_wq.csv"
+    )
+    filtered.write_csv(output_dir / out_name, separator=";")
+
+print("Done exporting grouped CSV files.")
 # %%
-measurements.group_by("Naam").agg(pl.len()).sort("len", descending=True)
+measurements_daily.group_by("Naam").agg(pl.len()).sort("len", descending=True)
 
 # %%
-import matplotlib.pyplot as plt
+# PLot all
 
-plt.figure(figsize=(12, 6))
-plt.plot(measurements["Meetwaarde.Waarde_Numeriek"], linewidth=0.5)
+unique_names = measurements_daily.select("Naam").unique().to_series().to_list()
+num_plots = len(unique_names)
+fig, axes = plt.subplots(num_plots, 1, figsize=(16, 4 * num_plots), sharex=True)
+if num_plots == 1:
+    axes = [axes]
+
+for idx, naam in enumerate(unique_names):
+    filtered = measurements_daily.filter(pl.col("Naam") == naam).sort("time")
+    
+    # Calculate cumulative debiet
+    cumulative = filtered.with_columns(
+        pl.col("Meetwaarde.Waarde_Numeriek").cum_sum().alias("Cumulative")
+    )
+    
+    # Plot discharge on primary axis
+    ax1 = axes[idx]
+    ax1.plot(filtered["time"], filtered["Meetwaarde.Waarde_Numeriek"], linewidth=0.5, label="Discharge")
+    ax1.axhline(y=0, color="red", linestyle="--", linewidth=0.5)
+    ax1.set_title(f"Discharge for {naam}")
+    ax1.set_ylabel("Discharge (m³/s)")
+    ax1.set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot cumulative on secondary axis
+    ax2 = ax1.twinx()
+    ax2.plot(cumulative["time"], cumulative["Cumulative"], linewidth=0.5, color="green", label="Cumulative")
+    ax2.set_ylabel("Cumulative (m³)", color="green")
+    ax2.tick_params(axis="y", labelcolor="green")
+    ax2.set_ylim(ax1.get_ylim()[0], None)
+    
+plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\debiet\discharge_and_cumulative_per_station.png",
+    dpi=300,
+    bbox_inches="tight"
+)
 plt.show()
 
 # %%
-measurements
+measurements_daily
 
 # %%
 # Generate median, 90th percentile, and 10th percentile per Naam
 percentile_stats = (
     measurements
-    .group_by(["Naam", "Grootheid.Code", "WaardeBewerkingsMethode.Omschrijving"])
+    .group_by(["Naam", "Grootheid.Code", "Eenheid.Code", "WaardeBewerkingsMethode.Omschrijving"])
     .agg(
+        pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("mean"),
         pl.col("Meetwaarde.Waarde_Numeriek").median().alias("median"),
         pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.90).alias("p90"),
         pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.10).alias("p10"),
     )
-    .sort(["Naam", "Grootheid.Code", "WaardeBewerkingsMethode.Omschrijving"])
+    .sort(["Naam", "Grootheid.Code", "Eenheid.Code", "WaardeBewerkingsMethode.Omschrijving"])
 )
 percentile_stats
 # %%
@@ -165,8 +250,14 @@ for idx, combination in enumerate(unique_combinations.iter_rows(named=True)):
     ax2.set_ylabel("Meetwaarde")
     axes[idx].set_title(f"Meetwaarde over Time - {naam} | {grootheid} | {bewerking}")
     axes[idx].tick_params(axis="x", rotation=45)
+    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
 
 plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\debiet\discharge_and_cumulative_per_station_detailed.png",
+    dpi=300,
+    bbox_inches="tight"
+)
 plt.show()
 
 # %%
@@ -224,6 +315,11 @@ for idx, naam in enumerate(unique_names):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\debiet\monthly_median_per_year.png",
+    dpi=300,
+    bbox_inches="tight"
+)
 plt.show()
 
 # %%
@@ -307,13 +403,16 @@ for idx, naam in enumerate(unique_names):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\debiet\monthly_median_with_ci_per_year.png",
+    dpi=300,
+    bbox_inches="tight"
+)
 plt.show()
 
 # %%
 
 measurements
-
-
 # %%
 # X-Y plot for Houtribsluis locations
 import matplotlib.pyplot as plt
@@ -410,7 +509,7 @@ locations_df = locations_pl_coords.to_pandas()
 
 # Merge median Meetwaarde values with locations
 # Merge median Meetwaarde values with locations
-median_values = percentile_stats[["Naam", "Grootheid.Code", "median"]].to_pandas()
+median_values = percentile_stats[["Naam", "Grootheid.Code", "Eenheid.Code", "median"]].to_pandas()
 locations_df = locations_df.merge(
     median_values,
     left_on=["Naam", "Grootheid.Code"],
@@ -471,7 +570,80 @@ add_basemap(
 )
 ax.set_xlabel("Longitude")
 ax.set_ylabel("Latitude")
-plt.title("Salinity Measurement Locations (OpenStreetMap)")
+plt.title("Debiet Measurement Locations (OpenStreetMap)")
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\debiet\debiet_locations_map.png",
+        dpi=300,
+        bbox_inches="tight"
+    )
 plt.show()
 
+# %%
+# Create interactive map with leaflet (folium)
+# Calculate center of map
+center_lat = locations_df["Lat"].mean()
+center_lon = locations_df["Lon"].mean()
+
+# Create folium map
+m = folium.Map(
+    location=[center_lat, center_lon],
+    zoom_start=10,
+    tiles="OpenStreetMap"
+)
+
+# Normalize median values for color mapping
+min_median = locations_df["median"].min()
+max_median = locations_df["median"].max()
+locations_df["median_normalized"] = (locations_df["median"] - min_median) / (max_median - min_median)
+
+# Add markers for each location
+for idx, (_, row) in enumerate(locations_df.iterrows()):
+    # Color based on median value (viridis colormap)
+    color_val = row["median_normalized"]
+    # Viridis colormap approximation
+    if color_val < 0.25:
+        color = "purple"
+    elif color_val < 0.5:
+        color = "blue"
+    elif color_val < 0.75:
+        color = "green"
+    else:
+        color = "yellow"
+    
+    popup_text = f"""
+    <b>{row['Naam']}</b><br>
+    Parameter: {row['Grootheid.Code']}<br>
+    Median: {row['median']:.2f} {row['Eenheid.Code']}
+    """
+    
+    folium.CircleMarker(
+        location=[row["Lat"], row["Lon"]],
+        radius=10,
+        popup=folium.Popup(popup_text, max_width=300),
+        color=color,
+        fill=True,
+        fillColor=color,
+        fillOpacity=0.7,
+        weight=2
+    ).add_to(m)
+
+# Add a color scale legend
+legend_html = """
+<div style="position: fixed; 
+     bottom: 50px; right: 50px; width: 200px; height: 150px; 
+     background-color: white; border:2px solid grey; z-index:9999; 
+     font-size:12px; padding: 10px">
+     <p style="margin: 0;"><b>Debiet Levels</b></p>
+     <p style="margin: 5px 0;"><i style="background:purple;width:20px;height:20px;display:inline-block;"></i> Low</p>
+     <p style="margin: 5px 0;"><i style="background:blue;width:20px;height:20px;display:inline-block;"></i> Low-Mid</p>
+     <p style="margin: 5px 0;"><i style="background:green;width:20px;height:20px;display:inline-block;"></i> Mid-High</p>
+     <p style="margin: 5px 0;"><i style="background:yellow;width:20px;height:20px;display:inline-block;"></i> High</p>
+</div>
+"""
+# Save interactive map
+m.save(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\debiet\interactive_map_debiet_locations.html")
+print("Interactive map saved to: interactive_map_debiet_locations.html")
+from IPython.display import display
+
+display(m)
 # %%

@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 
 import ddlpy
+import folium
+import matplotlib.pyplot as plt
 import polars as pl
 
 logging.basicConfig()
@@ -30,7 +32,6 @@ locations_pl = locations_pl.filter(
         | (pl.col("LocationCode").str.contains("houtrib"))
         | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
         | (pl.col("LocationCode").str.contains("kampen.ijssel"))
-        | (pl.col("LocationCode").str.contains("ijssel.km"))
     )
     & (pl.col("ProcesType") == "meting")
     & (pl.col("Grootheid.Code") == "WATHTE")
@@ -48,26 +49,30 @@ print(unique_location_codes)
 
 bool_stations = locations.index.isin([
     'denoever.ijsselmeer.binnenhaven',
-      'denoever.waddenzee.voorhaven',
-        'enkhuizen.ijsselmeer.oost.meetpaal1',
-          'enkhuizen.ijsselmeer.oost.meetpaal2',
-                    'ijsselmeer.midden.meetpaal26',
-                      'kampen.ijssel', 'kornwerderzand.ijsselmeer.binnenhaven', 
-                      'kornwerderzand.waddenzee.buitenhaven',
-                        'krabbersgat.ijsselmeer', 'krabbersgat.markermeer', 
-                        'lelystad.houtribsluis.noord', 'lelystad.houtribsluis.zuid',
-                          'lemmer.ijsselmeer', 'lemmer.ijsselmeer.woudagemaal', 
-                          'markerwaarddijk.ijsselmeer.zuidwest.meetpaal37',
-                            'oudemirdum.ijsselmeer.noordoost.meetpaal9',
-                              'oudemirdum.ijsselmeer.noordoost.meetpaalfl05',
-                                'oudezeug.ijsselmeer.midden.noord.meetpaal47',
-                                  'oudezeug.ijsselmeer.midden.noord.meetpaal48',
-                                    'oudezeug.ijsselmeer.midden.noord.meetpaal49',
-                                      'rotterdamsehoek.ijsselmeer', 
-                                      'stavoren.ijsselmeer',
-                                        'urk.ijsselmeer.oost.meetpaal2',
-                                          'urk.ijsselmeer.zuid.meetpaal46', 
-                                          'zwolle.ijssel',
+    'denoever.waddenzee.voorhaven',
+    # 'enkhuizen.ijsselmeer.oost.meetpaal1',
+    # 'enkhuizen.ijsselmeer.oost.meetpaal2',
+    # 'ijsselmeer.midden.meetpaal26',
+    'kampen.ijssel',
+    'kornwerderzand.ijsselmeer.binnenhaven', 
+    'kornwerderzand.waddenzee.buitenhaven',
+    'krabbersgat.ijsselmeer',
+    'krabbersgat.markermeer', 
+    'lelystad.houtribsluis.noord',
+    'lelystad.houtribsluis.zuid',
+    'lemmer.ijsselmeer',
+    'lemmer.ijsselmeer.woudagemaal', 
+    # 'markerwaarddijk.ijsselmeer.zuidwest.meetpaal37',
+    'oudemirdum.ijsselmeer.noordoost.meetpaal9',
+    # 'oudemirdum.ijsselmeer.noordoost.meetpaalfl05',
+    'oudezeug.ijsselmeer.midden.noord.meetpaal47',
+    'oudezeug.ijsselmeer.midden.noord.meetpaal48',
+    'oudezeug.ijsselmeer.midden.noord.meetpaal49',
+    'rotterdamsehoek.ijsselmeer', 
+    # 'stavoren.ijsselmeer',
+    'urk.ijsselmeer.oost.meetpaal2',
+    # 'urk.ijsselmeer.zuid.meetpaal46', 
+    'zwolle.ijssel',
 ])
 bool_procestype = locations["ProcesType"].isin(["meting"])
 bool_grootheid = locations["Grootheid.Code"].isin(["WATHTE"])
@@ -165,63 +170,43 @@ for row in group_keys.iter_rows(named=True):
 
 print("Done exporting grouped CSV files.")
 # %%
-measurements.group_by("Naam").agg(pl.len()).sort("len", descending=True)
+measurements_daily.group_by("Naam").agg(pl.len()).sort("len", descending=True)
 
 # %%
-import matplotlib.pyplot as plt
+measurements_daily
+# %%
 
-plt.figure(figsize=(12, 6))
-plt.plot(measurements["Meetwaarde.Waarde_Numeriek"], linewidth=0.5)
+unique_names = measurements_daily["Naam"].unique()
+num_plots = len(unique_names)
+fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots), sharex=True, sharey=True)
+
+for idx, naam in enumerate(unique_names):
+    filtered = measurements_daily.filter(pl.col("Naam") == naam)
+    axes[idx].plot(filtered["time"], filtered["Meetwaarde.Waarde_Numeriek"], linewidth=0.5)
+    axes[idx].axhline(y=0, color="red", linestyle="--", linewidth=0.5)
+    axes[idx].set_title(f"Measurements for {naam}")
+    axes[idx].set_ylabel("Waarde_Numeriek")
+    axes[idx].set_xlabel("")
+    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
+    axes[idx].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\all_measurements_by_naam.png", dpi=300, bbox_inches="tight")
 plt.show()
-
-# %%
-measurements
-
 # %%
 # Generate median, 90th percentile, and 10th percentile per Naam
 percentile_stats = (
-    measurements
-    .group_by(["Naam", "Grootheid.Code"])
+    measurements_daily
+    .group_by(["Naam", "Grootheid.Code", "Eenheid.Code"])
     .agg(
-        pl.col("Meetwaarde.Waarde_Numeriek").median().alias("median"),
-        pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.90).alias("p90"),
-        pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.10).alias("p10"),
+        pl.col("Meetwaarde.Waarde_Numeriek").mean().round(2).alias("mean"),
+        pl.col("Meetwaarde.Waarde_Numeriek").median().round(2).alias("median"),
+        pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.90).round(2).alias("p90"),
+        pl.col("Meetwaarde.Waarde_Numeriek").quantile(0.10).round(2).alias("p10"),
     )
-    .sort(["Naam", "Grootheid.Code"])
+    .sort(["Naam", "Grootheid.Code", "Eenheid.Code"])
 )
 percentile_stats
-
-# %%
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-sns.set_style("whitegrid")
-
-unique_names = measurements["Naam"].unique()
-
-num_plots = len(unique_names)
-fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
-
-if num_plots == 1:
-    axes = [axes]
-
-for idx, naam in enumerate(unique_names):
-    data = measurements.filter(pl.col("Naam") == naam)
-    data_sorted = data.sort("time")
-    sns.lineplot(
-        data=data_sorted.to_pandas(),
-        x="time",
-        y="Meetwaarde.Waarde_Numeriek",
-        ax=axes[idx],
-    )
-    axes[idx].set_xlabel("Date")
-    axes[idx].set_ylabel("Meetwaarde")
-    axes[idx].set_title(f"Meetwaarde over Time - {naam}")
-    axes[idx].tick_params(axis="x", rotation=45)
-
-plt.tight_layout()
-plt.show()
-
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
 import matplotlib.pyplot as plt
@@ -231,7 +216,7 @@ import seaborn as sns
 sns.set_style("whitegrid")
 colors = plt.cm.plasma(np.linspace(0.3, 1, 10))
 
-unique_names = measurements["Naam"].unique()
+unique_names = measurements_daily["Naam"].unique()
 
 num_plots = len(unique_names)
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
@@ -240,7 +225,7 @@ if num_plots == 1:
     axes = [axes]
 
 for idx, naam in enumerate(unique_names):
-    data = measurements.filter(pl.col("Naam") == naam)
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
 
@@ -268,6 +253,7 @@ for idx, naam in enumerate(unique_names):
             linewidth=1.5,
             marker="o",
         )
+        axes[idx].axhline(y=0, color="red", linestyle="--", linewidth=0.5)
 
     axes[idx].set_xlabel("Month")
     axes[idx].set_ylabel("Monthly Median Meetwaarde")
@@ -277,6 +263,7 @@ for idx, naam in enumerate(unique_names):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\monthly_median_meetwaarde_by_month.png", dpi=300, bbox_inches="tight")
 plt.show()
 
 # %%
@@ -288,7 +275,7 @@ import seaborn as sns
 sns.set_style("whitegrid")
 colors = plt.cm.Greys(np.linspace(0.3, 1, 10))
 
-unique_names = measurements["Naam"].unique()
+unique_names = measurements_daily["Naam"].unique()
 
 num_plots = len(unique_names)
 fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
@@ -297,7 +284,7 @@ if num_plots == 1:
     axes = [axes]
 
 for idx, naam in enumerate(unique_names):
-    data = measurements.filter(pl.col("Naam") == naam)
+    data = measurements_daily.filter(pl.col("Naam") == naam)
     data_sorted = data.sort("time")
     data_pd = data_sorted.to_pandas()
 
@@ -360,12 +347,8 @@ for idx, naam in enumerate(unique_names):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
+plt.savefig(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\monthly_median_meetwaarde_by_month_with_ci.png", dpi=300, bbox_inches="tight")
 plt.show()
-
-# %%
-
-measurements
-
 
 # %%
 # X-Y plot for Houtribsluis locations
@@ -436,6 +419,7 @@ if len(houtribsluis_data) > 0:
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
+    # plt.savefig(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\houtribsluis_comparison.png", dpi=300, bbox_inches="tight")
     plt.show()
 else:
     print("No Houtribsluis data found")
@@ -463,7 +447,7 @@ locations_df = locations_pl_coords.to_pandas()
 
 # Merge median Meetwaarde values with locations
 # Merge median Meetwaarde values with locations
-median_values = percentile_stats[["Naam", "Grootheid.Code", "median"]].to_pandas()
+median_values = percentile_stats[["Naam", "Grootheid.Code", "Eenheid.Code", "median"]].to_pandas()
 locations_df = locations_df.merge(
     median_values,
     left_on=["Naam", "Grootheid.Code"],
@@ -501,7 +485,7 @@ for idx, (_, row) in enumerate(locations_df.iterrows()):
     ax.text(
         row["Lon"] + offset_x,
         row["Lat"] + offset_y,
-        f"{row['Naam']}\n{row['Grootheid.Code']}\nmed: {row['median']:.2f}",
+        f"{row['Naam']}\n{row['Grootheid.Code']}\nmed: {row['median']:.2f} {row['Eenheid.Code']}",
         fontsize=7,
         ha=ha,
         va=va,
@@ -512,8 +496,8 @@ for idx, (_, row) in enumerate(locations_df.iterrows()):
     )
 
 # Add OpenStreetMap basemap
-ax.set_xlim(4.55, 5.9)
-ax.set_ylim(52.2, 53.4)
+ax.set_xlim(4.85, 6.15)
+ax.set_ylim(52.45, 53.1)
 add_basemap(
     ax,
     crs="EPSG:4258",
@@ -525,6 +509,77 @@ add_basemap(
 ax.set_xlabel("Longitude")
 ax.set_ylabel("Latitude")
 plt.title("Salinity Measurement Locations (OpenStreetMap)")
+plt.savefig(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\waterhoogte_locations_map.png", dpi=300, bbox_inches="tight")
 plt.show()
 
+# %%
+
+
+# Create interactive map with leaflet (folium)
+# Calculate center of map
+center_lat = locations_df["Lat"].mean()
+center_lon = locations_df["Lon"].mean()
+
+# Create folium map
+m = folium.Map(
+    location=[center_lat, center_lon],
+    zoom_start=10,
+    tiles="OpenStreetMap"
+)
+
+# Normalize median values for color mapping
+min_median = locations_df["median"].min()
+max_median = locations_df["median"].max()
+locations_df["median_normalized"] = (locations_df["median"] - min_median) / (max_median - min_median)
+
+# Add markers for each location
+for idx, (_, row) in enumerate(locations_df.iterrows()):
+    # Color based on median value (viridis colormap)
+    color_val = row["median_normalized"]
+    # Viridis colormap approximation
+    if color_val < 0.25:
+        color = "purple"
+    elif color_val < 0.5:
+        color = "blue"
+    elif color_val < 0.75:
+        color = "green"
+    else:
+        color = "yellow"
+    
+    popup_text = f"""
+    <b>{row['Naam']}</b><br>
+    Parameter: {row['Grootheid.Code']}<br>
+    Median: {row['median']:.2f} {row['Eenheid.Code']}
+    """
+    
+    folium.CircleMarker(
+        location=[row["Lat"], row["Lon"]],
+        radius=10,
+        popup=folium.Popup(popup_text, max_width=300),
+        color=color,
+        fill=True,
+        fillColor=color,
+        fillOpacity=0.7,
+        weight=2
+    ).add_to(m)
+
+# Add a color scale legend
+legend_html = """
+<div style="position: fixed; 
+     bottom: 50px; right: 50px; width: 200px; height: 150px; 
+     background-color: white; border:2px solid grey; z-index:9999; 
+     font-size:12px; padding: 10px">
+     <p style="margin: 0;"><b>Waterhoogte Levels</b></p>
+     <p style="margin: 5px 0;"><i style="background:purple;width:20px;height:20px;display:inline-block;"></i> Low</p>
+     <p style="margin: 5px 0;"><i style="background:blue;width:20px;height:20px;display:inline-block;"></i> Low-Mid</p>
+     <p style="margin: 5px 0;"><i style="background:green;width:20px;height:20px;display:inline-block;"></i> Mid-High</p>
+     <p style="margin: 5px 0;"><i style="background:yellow;width:20px;height:20px;display:inline-block;"></i> High</p>
+</div>
+"""
+# Save interactive map
+m.save(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\interactive_map_waterhoogte_locations.html")
+print("Interactive map saved to: interactive_map_waterhoogte_locations.html")
+from IPython.display import display
+
+display(m)
 # %%

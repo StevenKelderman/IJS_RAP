@@ -5,6 +5,7 @@ import logging
 import re
 from pathlib import Path
 
+import folium
 import ddlpy
 import matplotlib.pyplot as plt
 import numpy as np
@@ -155,7 +156,7 @@ measurements.write_parquet(
 # %%
 # Read parquet file
 TODAY = dt.datetime.now().strftime("%Y%m%d")
-# TODAY = "20260401"  # override for testing
+TODAY = "20260421"  # override for testing
 
 measurements = pl.read_parquet(
     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_2018_2026_{TODAY}.parquet"
@@ -323,7 +324,7 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     axes[idx].legend(title="Bemonsteringshoogte")
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\time_series_daily_mean_meetwaarde_per_station.png",
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\time_series_daily_mean_meetwaarde_per_station.png",
              dpi=300
 )
 plt.show()
@@ -410,7 +411,7 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\seasonal_median_meetwaarde_per_station.png",
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\seasonal_median_meetwaarde_per_station.png",
              dpi=300
 )
 plt.show()
@@ -466,7 +467,7 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     axes[idx].legend(title="Bemonsteringshoogte")
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_per_station.png",
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\monthly_median_meetwaarde_per_station.png",
              dpi=300
 )
 plt.show()
@@ -600,7 +601,7 @@ for combo in combinations:
     plot_idx += 1
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_boxplot_per_station.png", dpi=300)
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\monthly_median_meetwaarde_boxplot_per_station.png", dpi=300)
 plt.show()
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
@@ -657,7 +658,7 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_by_month_yearly_colors_per_station.png", dpi=300)
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\monthly_median_meetwaarde_by_month_yearly_colors_per_station.png", dpi=300)
 plt.show()
 
 # %%
@@ -739,7 +740,7 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_median_meetwaarde_by_month_yearly_colors_ci_per_station.png", dpi=300)
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\monthly_median_meetwaarde_by_month_yearly_colors_ci_per_station.png", dpi=300)
 plt.show()
 # %%
 # Plot showing 1 subplot per year with each location plotted
@@ -794,7 +795,7 @@ for year_idx, year in enumerate(unique_years):
     axes[year_idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\monthly_mean_meetwaarde_by_location_yearly_subplots.png", dpi=300)
+plt.savefig("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\4_output\\figuren\\saliniteit\\monthly_mean_meetwaarde_by_location_yearly_subplots.png", dpi=300)
 plt.show()
 # %%
 # X-Y plot for Houtribsluis locations
@@ -926,7 +927,10 @@ locations_df = locations_df.merge(
 )
 
 locations_df = locations_df.dropna(subset=["median"])  # Drop rows without median values
-locations_df = locations_df.loc[locations_df["Grootheid.Code"] == "CONCTTE"]
+locations_df
+# %%
+# locations_df = locations_df.loc[locations_df["Grootheid.Code"] == "CONCTTE"]
+locations_df = locations_df.loc[locations_df["Grootheid.Code"] == "SALNTT"]
 locations_df
 # %%
 
@@ -985,6 +989,11 @@ add_basemap(
 ax.set_xlabel("Longitude")
 ax.set_ylabel("Latitude")
 plt.title("Salinity Measurement Locations (OpenStreetMap)")
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\saliniteit\measurement_locations_SALNTT_map.png",
+    dpi=300,
+    bbox_inches="tight"
+)
 plt.show()
 # %%
 locations_df_pivot = locations_df.pivot_table(
@@ -1038,7 +1047,7 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
 
 plt.tight_layout()
 plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\boxplot_meetwaarde_by_height_parameter_per_location.png",
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\saliniteit\boxplot_meetwaarde_by_height_parameter_per_location.png",
     dpi=300
 )
 plt.show()
@@ -1096,7 +1105,7 @@ for param_idx, param in enumerate(unique_parameters):
 
 plt.tight_layout()
 plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\boxplot_per_parameter_all_locations_heights.png",
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\saliniteit\boxplot_per_parameter_all_locations_heights.png",
     dpi=300,
     bbox_inches="tight"
 )
@@ -1165,8 +1174,8 @@ legend_html = """
 </div>
 """
 # Save interactive map
-m.save(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\interactive_map_salinity_locations.html")
-print("Interactive map saved to: interactive_map_salinity_locations.html")
+m.save(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\saliniteit\interactive_map_salinity_SALNTT_locations.html")
+print("Interactive map saved to: interactive_map_salinity_SALNTT_locations.html")
 from IPython.display import display
 
 display(m)
