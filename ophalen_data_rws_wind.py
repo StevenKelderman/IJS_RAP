@@ -977,9 +977,9 @@ for idx, (_, row) in enumerate(locations_df.iterrows()):
         color = "red"
 
     popup_text = f"""
-    <b>{row['LocationCode']}</b><br>
-    Parameter: {row['Grootheid.Code']}<br>
-    Median: {row['median']:.2f} {row['Eenheid.Code']}
+    <b>{row["LocationCode"]}</b><br>
+    Parameter: {row["Grootheid.Code"]}<br>
+    Median: {row["median"]:.2f} {row["Eenheid.Code"]}
     """
 
     folium.CircleMarker(
