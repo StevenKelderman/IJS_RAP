@@ -8,7 +8,7 @@ version = "0.1.0"
 [tasks]
 
 [dependencies]
-python = "3.14.*"
+python = "3.13.*"
 pandas = ">=3.0.2,<4"
 matplotlib = ">=3.10.8,<4"
 seaborn = ">=0.13.2,<0.14"

@@ -1,18 +1,29 @@
 # %%
-# enabling debug logging so we can see what happens in the background
+# Imports
 import datetime as dt
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import ddlpy
 import folium
+import geopandas as gpd
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
+import seaborn as sns
+from contextily import add_basemap
 
+# enabling debug logging so we can see what happens in the background
 logging.basicConfig()
 logging.getLogger("ddlpy").setLevel(logging.INFO)
 
+# %%
+
+ROOT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse")
+
+DATA_OUTPUT_DIR = ROOT_DIR / "data" / "4_output"
 # %%
 
 locations = ddlpy.locations()
@@ -24,16 +35,17 @@ locations_pl = pl.from_pandas(locations, include_index=True)
 locations_pl
 # %%
 locations_pl = locations_pl.filter(
-    (
-        (pl.col("LocationCode").str.contains("ijsselmeer"))
-        | (pl.col("LocationCode").str.contains("denoever"))
-        | (pl.col("LocationCode").str.contains("kornwerderzand"))
-        | (pl.col("LocationCode").str.contains("krabbersgat"))
-        | (pl.col("LocationCode").str.contains("houtrib"))
-        | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
-        | (pl.col("LocationCode").str.contains("kampen.ijssel"))
-    )
-    & (pl.col("ProcesType") == "meting")
+    # (
+    #     (pl.col("LocationCode").str.contains("ijsselmeer"))
+    #     | (pl.col("LocationCode").str.contains("denoever"))
+    #     | (pl.col("LocationCode").str.contains("kornwerderzand"))
+    #     | (pl.col("LocationCode").str.contains("krabbersgat"))
+    #     | (pl.col("LocationCode").str.contains("houtrib"))
+    #     | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
+    #     | (pl.col("LocationCode").str.contains("kampen.ijssel"))
+    # )
+    # &
+    (pl.col("ProcesType") == "meting")
     & (pl.col("Grootheid.Code") == "WATHTE")
     & (pl.col("Hoedanigheid.Code") == "NAP")
     & (pl.col("Groepering.Code").is_in([""]))
@@ -42,19 +54,57 @@ locations_pl = locations_pl.filter(
 # filter for water level stations
 locations_pl
 # %%
-unique_location_codes = locations_pl["LocationCode"].unique().to_list()
+# Read geopackage and find points within
+
+gpkg_path = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\IJSSELMEER5.gpkg"
+
+# Read the geopackage
+gdf_boundary = gpd.read_file(gpkg_path)
+print(f"Read geopackage with {len(gdf_boundary)} features")
+print(f"CRS: {gdf_boundary.crs}")
+gdf_boundary.plot(figsize=(10, 10), edgecolor="black", facecolor="none", aspect="auto")
+# %%
+
+# Convert locations to GeoDataFrame
+locations_gdf = gpd.GeoDataFrame(
+    locations_pl.to_pandas(),
+    geometry=gpd.points_from_xy(locations_pl["Lon"], locations_pl["Lat"]),
+    crs="EPSG:4326",
+)
+
+# Reproject to match geopackage CRS if needed
+if gdf_boundary.crs != locations_gdf.crs:
+    locations_gdf = locations_gdf.to_crs(gdf_boundary.crs)
+
+# Find points within boundary
+points_within = gpd.sjoin(locations_gdf, gdf_boundary, how="inner", predicate="within")
+print(f"Found {len(points_within)} stations within geopackage boundary")
+points_within_pl = pl.from_pandas(
+    points_within.drop(columns="geometry"), include_index=False
+)
+# %%
+unique_location_codes = points_within_pl["LocationCode"].unique().to_list()
 unique_location_codes.sort()
 print(unique_location_codes)
 # %%
 
 bool_stations = locations.index.isin(
     [
+        # 'breezanddijk',
         "denoever.ijsselmeer.binnenhaven",
         "denoever.waddenzee.voorhaven",
+        "dronten.roggebotsluis.drontermeer",
+        "dronten.roggebotsluis.vossemeer",
+        # 'enkhuizen',
         # 'enkhuizen.ijsselmeer.oost.meetpaal1',
         # 'enkhuizen.ijsselmeer.oost.meetpaal2',
+        "genemuiden",
         # 'ijsselmeer.midden.meetpaal26',
+        "kadoelen.zwanediep",
+        "kampen.keteldiep",
+        #  'kamperhoek.badstrand',
         "kampen.ijssel",
+        "ketelhaven.ketelmeer",
         "kornwerderzand.ijsselmeer.binnenhaven",
         "kornwerderzand.waddenzee.buitenhaven",
         "krabbersgat.ijsselmeer",
@@ -63,14 +113,23 @@ bool_stations = locations.index.isin(
         "lelystad.houtribsluis.zuid",
         "lemmer.ijsselmeer",
         "lemmer.ijsselmeer.woudagemaal",
+        "lemmer.woudagemaal.stroomkanaal",
         # 'markerwaarddijk.ijsselmeer.zuidwest.meetpaal37',
         "oudemirdum.ijsselmeer.noordoost.meetpaal9",
         # 'oudemirdum.ijsselmeer.noordoost.meetpaalfl05',
         "oudezeug.ijsselmeer.midden.noord.meetpaal47",
         "oudezeug.ijsselmeer.midden.noord.meetpaal48",
         "oudezeug.ijsselmeer.midden.noord.meetpaal49",
+        # 'paardenboer',
+        "ramspolbrug.ramsdiep",
+        "ramspolkering.ketelmeer",
         "rotterdamsehoek.ijsselmeer",
+        "rotterdamsehoek.meetpaalfl2",
+        # 'schokkerhaven',
+        "stavoren.gemaalhoogland.buiten"
         # 'stavoren.ijsselmeer',
+        "swifterbant.ketelmeer",
+        #  'urk',
         "urk.ijsselmeer.oost.meetpaal2",
         # 'urk.ijsselmeer.zuid.meetpaal46',
         "zwolle.ijssel",
@@ -95,8 +154,6 @@ selected
 unique_names = selected["Naam"].unique()
 unique_names
 # %%
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def fetch_measurements(args):
@@ -125,7 +182,6 @@ with ThreadPoolExecutor(max_workers=16) as executor:
     for future in as_completed(futures):
         all_measurements.append(future.result())
 print(f"Completed processing of all {len(selected)} stations")
-
 # %%
 converted_measurements = [
     pl.from_pandas(df, include_index=True) for df in all_measurements if not df.empty
@@ -142,12 +198,17 @@ TODAY = dt.datetime.now().strftime("%Y%m%d")
 measurements.write_parquet(
     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_waterhoogte_2018_2026_{TODAY}.parquet"
 )
-measurements.shape
-
+measurements.head()
 # %%
 # Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
 
-group_cols = ["Naam", "Grootheid.Code", "Eenheid.Code"]
+group_cols = [
+    "Code",
+    "Naam",
+    "Grootheid.Code",
+    "Eenheid.Code",
+    "WaardeBewerkingsMethode.Omschrijving",
+]
 
 # Aggregate 10-minute data to daily means per station/parameter/height combination
 measurements_daily = (
@@ -195,7 +256,6 @@ for row in group_keys.iter_rows(named=True):
 print("Done exporting grouped CSV files.")
 # %%
 measurements_daily.group_by("Naam").agg(pl.len()).sort("len", descending=True)
-
 # %%
 measurements_daily
 # %%
@@ -240,9 +300,6 @@ percentile_stats = (
 percentile_stats
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 
 sns.set_style("whitegrid")
 colors = plt.cm.plasma(np.linspace(0.3, 1, 10))
@@ -302,9 +359,6 @@ plt.show()
 
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 
 sns.set_style("whitegrid")
 colors = plt.cm.Greys(np.linspace(0.3, 1, 10))
@@ -386,82 +440,9 @@ plt.savefig(
     bbox_inches="tight",
 )
 plt.show()
-
 # %%
-# X-Y plot for Houtribsluis locations
-import matplotlib.pyplot as plt
-import numpy as np
+# Plot static map
 
-houtribsluis_data = measurements.filter(pl.col("Naam").str.contains("Houtribsluis"))
-
-if len(houtribsluis_data) > 0:
-    houtribsluis_df = houtribsluis_data.sort("time").to_pandas()
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-
-    unique_names = houtribsluis_df["Naam"].unique()
-    if len(unique_names) >= 2:
-        data1 = houtribsluis_df[houtribsluis_df["Naam"] == unique_names[0]]
-        data2 = houtribsluis_df[houtribsluis_df["Naam"] == unique_names[1]]
-        data1["year"] = data1["time"].dt.year
-        colors = data1["year"].apply(lambda x: plt.cm.Set2(x % 8))
-        ax.scatter(
-            data1["Meetwaarde.Waarde_Numeriek"],
-            data2["Meetwaarde.Waarde_Numeriek"],
-            marker="o",
-            s=30,
-            c=data1["year"],
-            cmap="Set2",
-            alpha=0.7,
-        )
-        cbar = plt.colorbar(ax.collections[0], ax=ax)
-        cbar.set_label("Year")
-        # Add linear trendline
-        mask = (
-            data1["Meetwaarde.Waarde_Numeriek"].notna()
-            & data2["Meetwaarde.Waarde_Numeriek"].notna()
-        )
-        if mask.sum() > 1:
-            z = np.polyfit(
-                data1.loc[mask, "Meetwaarde.Waarde_Numeriek"],
-                data2.loc[mask, "Meetwaarde.Waarde_Numeriek"],
-                1,
-            )
-            p = np.poly1d(z)
-            x_trend = np.linspace(
-                data1["Meetwaarde.Waarde_Numeriek"].min(),
-                data1["Meetwaarde.Waarde_Numeriek"].max(),
-                100,
-            )
-            ax.plot(x_trend, p(x_trend), "r-", linewidth=2, label="Trendline")
-        ax.set_xlabel(unique_names[0])
-        ax.set_ylabel(unique_names[1])
-        ax.set_title(
-            f"Water Height Comparison - {unique_names[0]} vs {unique_names[1]}"
-        )
-    else:
-        for naam in houtribsluis_df["Naam"].unique():
-            data = houtribsluis_df[houtribsluis_df["Naam"] == naam]
-            ax.plot(
-                data["time"],
-                data["Meetwaarde.Waarde_Numeriek"],
-                label=naam,
-                marker="o",
-                markersize=3,
-                linewidth=1,
-            )
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Meetwaarde")
-        ax.set_title("Water Height (Meetwaarde) - Houtribsluis Locations")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    # plt.savefig(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\houtribsluis_comparison.png", dpi=300, bbox_inches="tight")
-    plt.show()
-else:
-    print("No Houtribsluis data found")
-
-# %%
 locations_pl_coords = locations_pl.select(
     [
         "LocationCode",
@@ -471,12 +452,6 @@ locations_pl_coords = locations_pl.select(
         "Grootheid.Code",
     ]
 ).unique()
-locations_pl_coords
-# %%
-percentile_stats
-# %%
-import matplotlib.pyplot as plt
-from contextily import add_basemap
 
 # Create figure with standard projection
 fig, ax = plt.subplots(figsize=(25, 15))
@@ -558,7 +533,7 @@ plt.savefig(
 plt.show()
 
 # %%
-
+# Plot interactive map with folium
 
 # Create interactive map with leaflet (folium)
 # Calculate center of map
@@ -624,7 +599,4 @@ m.save(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\interactive_map_waterhoogte_locations.html"
 )
 print("Interactive map saved to: interactive_map_waterhoogte_locations.html")
-from IPython.display import display
-
-display(m)
 # %%

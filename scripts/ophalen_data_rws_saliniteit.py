@@ -3,12 +3,15 @@
 import datetime as dt
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import folium
 import ddlpy
+import folium
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import polars as pl
 import seaborn as sns
 from contextily import add_basemap
@@ -17,6 +20,11 @@ from contextily import add_basemap
 logging.basicConfig()
 logging.getLogger("ddlpy").setLevel(logging.INFO)
 
+# %%
+
+ROOT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse")
+
+DATA_OUTPUT_DIR = ROOT_DIR / "data" / "4_output"
 # %%
 
 locations = ddlpy.locations()
@@ -29,61 +37,106 @@ locations_pl
 # %%
 locations_pl = locations_pl.filter(
     (
-        (
-            (pl.col("LocationCode").str.contains("ijsselmeer"))
-            | (pl.col("LocationCode").str.contains("denoever"))
-            | (pl.col("LocationCode").str.contains("kornwerderzand"))
-            | (pl.col("LocationCode").str.contains("andijk"))
-            | (pl.col("LocationCode").str.contains("waddenzee"))
-            # | (pl.col("LocationCode").str.contains("markermeer"))
-            # | (pl.col("LocationCode").str.contains("doovebalg"))
-            | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
-            | (pl.col("LocationCode").str.contains("kampen.ijssel"))
-            | (pl.col("LocationCode").str.contains("ijssel.km"))
-        )
-        & (pl.col("ProcesType") == "meting")
-        & (pl.col("Hoedanigheid.Code") == "Cl")
+        # (
+        #     (pl.col("LocationCode").str.contains("ijsselmeer"))
+        #     | (pl.col("LocationCode").str.contains("denoever"))
+        #     | (pl.col("LocationCode").str.contains("kornwerderzand"))
+        #     | (pl.col("LocationCode").str.contains("andijk"))
+        #     | (pl.col("LocationCode").str.contains("waddenzee"))
+        #     # | (pl.col("LocationCode").str.contains("markermeer"))
+        #     # | (pl.col("LocationCode").str.contains("doovebalg"))
+        #     | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
+        #     | (pl.col("LocationCode").str.contains("kampen.ijssel"))
+        #     | (pl.col("LocationCode").str.contains("ijssel.km"))
+        # )
+        # &
+        (pl.col("ProcesType") == "meting") & (pl.col("Hoedanigheid.Code") == "Cl")
     )
     | (
-        (
-            (pl.col("LocationCode").str.contains("ijsselmeer"))
-            | (pl.col("LocationCode").str.contains("denoever"))
-            | (pl.col("LocationCode").str.contains("kornwerderzand"))
-            | (pl.col("LocationCode").str.contains("andijk"))
-            | (pl.col("LocationCode").str.contains("waddenzee"))
-            # | (pl.col("LocationCode").str.contains("markermeer"))
-            # | (pl.col("LocationCode").str.contains("doovebalg"))
-            | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
-            | (pl.col("LocationCode").str.contains("kampen.ijssel"))
-            | (pl.col("LocationCode").str.contains("ijssel.km"))
-        )
-        & (pl.col("ProcesType") == "meting")
-        & (pl.col("Grootheid.Code") == "SALNTT")
+        # (
+        #     (pl.col("LocationCode").str.contains("ijsselmeer"))
+        #     | (pl.col("LocationCode").str.contains("denoever"))
+        #     | (pl.col("LocationCode").str.contains("kornwerderzand"))
+        #     | (pl.col("LocationCode").str.contains("andijk"))
+        #     | (pl.col("LocationCode").str.contains("waddenzee"))
+        #     # | (pl.col("LocationCode").str.contains("markermeer"))
+        #     # | (pl.col("LocationCode").str.contains("doovebalg"))
+        #     | (pl.col("LocationCode").str.contains("zwolle.ijssel"))
+        #     | (pl.col("LocationCode").str.contains("kampen.ijssel"))
+        #     | (pl.col("LocationCode").str.contains("ijssel.km"))
+        # )
+        # &
+        (pl.col("ProcesType") == "meting") & (pl.col("Grootheid.Code") == "SALNTT")
     )
 )  # filter for salinity stations
 locations_pl
 # %%
-unique_location_codes = locations_pl["LocationCode"].unique().sort().to_list()
+# Read geopackage and find points within
+
+gpkg_path = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\IJSSELMEER5.gpkg"
+
+# Read the geopackage
+gdf_boundary = gpd.read_file(gpkg_path)
+print(f"Read geopackage with {len(gdf_boundary)} features")
+print(f"CRS: {gdf_boundary.crs}")
+gdf_boundary.plot(figsize=(10, 10), edgecolor="black", facecolor="none", aspect="auto")
+# %%
+
+# Convert locations to GeoDataFrame
+locations_gdf = gpd.GeoDataFrame(
+    locations_pl.to_pandas(),
+    geometry=gpd.points_from_xy(locations_pl["Lon"], locations_pl["Lat"]),
+    crs="EPSG:4326",
+)
+
+# Reproject to match geopackage CRS if needed
+if gdf_boundary.crs != locations_gdf.crs:
+    locations_gdf = locations_gdf.to_crs(gdf_boundary.crs)
+
+# Find points within boundary
+points_within = gpd.sjoin(locations_gdf, gdf_boundary, how="inner", predicate="within")
+print(f"Found {len(points_within)} stations within geopackage boundary")
+points_within_pl = pl.from_pandas(
+    points_within.drop(columns="geometry"), include_index=False
+)
+
+# %%
+unique_location_codes = points_within_pl["LocationCode"].unique().to_list()
+unique_location_codes.sort()
 print(unique_location_codes)
 # %%
 
 bool_stations = locations.index.isin(
     [
         "andijk",
+        "broekerhaven.recreatiepark",
         "denoever.ijsselmeer.binnenhaven",
         "denoever.ijsselmeer.stevinsluizen.zuid",
         "denoever.ijsselmeer.vaargeul",
         "denoever.spuisluis.binnen",
         "denoever.waddenzee.voorhaven.kolk",
+        # 'doovebalg.oost',
         "friesekust.ijsselmeer",
+        "ketelhaven.ketelmeer",
+        "kornwerd",
         "kornwerderzand.ijsselmeer.binnenhaven",
         "kornwerderzand.ijsselmeer.middelgronden",
         "kornwerderzand.ijsselmeer.spui",
         "kornwerderzand.ijsselmeer.spuihavenzuid",
         "kornwerderzand.ijsselmeer.vaargeul",
         "kornwerderzand.waddenzee.voorhaven.kolk",
+        "lelystad.houtribhoek",
+        "lemmer.teroelsterkolk.buiten",
+        "makkum.sluis.buiten",
+        "oosterdijk",
+        "oudezeug",
+        "ramsdiep",
+        "rotterdamsehoek",
         "rotterdamsehoek.ijsselmeer",
-        "waddenzee.ra",
+        "stavoren.gemaalhoogland.buiten",
+        "steilebank",
+        "vrouwezand",
+        "vrouwezand.meetpaal",
         "wieringen.ijsselmeer.oost",
     ]
 )
@@ -118,26 +171,6 @@ unique_location_codes = (
 )
 unique_location_codes
 # %%
-
-# if we pass one row to the measurements function you can get all the measurements
-all_measurements = []
-print(f"Starting processing of {len(selected)} stations...")
-for idx, (index, row) in enumerate(selected.sort_values("Naam").iterrows()):
-    station_name = row["Naam"]
-    grootheid = row["Grootheid.Code"]
-    print(
-        f"{idx + 1}/{len(selected)}: Getting measurements for {station_name} ({grootheid})"
-    )
-    print("  Start date: 2018-01-01, End date: 2026-03-31")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
-    print(
-        f"  Retrieved {len(measurements):,} measurements for {station_name} ({grootheid})"
-    )
-    all_measurements.append(measurements)
-print(f"Completed processing of all {len(selected)} stations")
-
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def fetch_measurements(args):
@@ -189,7 +222,7 @@ measurements.write_parquet(
 # %%
 # Read parquet file
 TODAY = dt.datetime.now().strftime("%Y%m%d")
-TODAY = "20260421"  # override for testing
+# TODAY = "20260421"  # override for testing
 
 measurements = pl.read_parquet(
     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_saliniteit_2018_2026_{TODAY}.parquet"
@@ -334,38 +367,78 @@ percentile_stats = (
 )
 percentile_stats
 # %%
-# Plot time series of Meetwaarde for each station
-sns.set_style("whitegrid")
+# Plot all
 
-num_plots = len(measurements_daily["Naam"].unique())
-fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
-
-if num_plots == 1:
+unique_combinations = (
+    measurements_daily.select(["Naam", "Grootheid.Code", "Eenheid.Code"])
+    .unique()
+    .sort(["Naam", "Grootheid.Code", "Eenheid.Code"])
+)
+naam_list = measurements_daily.select("Naam").unique().sort("Naam")["Naam"].to_list()
+grootheid_list = (
+    measurements_daily.select("Grootheid.Code")
+    .unique()
+    .sort("Grootheid.Code")["Grootheid.Code"]
+    .to_list()
+)
+num_rows = len(naam_list)
+num_cols = len(grootheid_list)
+fig, axes = plt.subplots(num_rows, num_cols, figsize=(16, 4 * num_rows), sharex=True)
+if num_rows == 1 and num_cols == 1:
+    axes = [[axes]]
+elif num_rows == 1:
     axes = [axes]
+elif num_cols == 1:
+    axes = [[ax] for ax in axes]
 
-for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
-    print(
-        f"({idx + 1}/{num_plots}) Plotting daily mean time series for station: {naam}"
-    )
-    data = measurements_daily.filter(pl.col("Naam") == naam)
-    data_sorted = data.sort("time")
-    data_pd = data_sorted.to_pandas()
-    data_pd["WaarnemingMetadata.Bemonsteringshoogte"] = data_pd[
-        "WaarnemingMetadata.Bemonsteringshoogte"
-    ].astype(str)
-    sns.lineplot(
-        data=data_pd,
-        x="time",
-        y="Meetwaarde.Waarde_Numeriek",
-        hue="WaarnemingMetadata.Bemonsteringshoogte",
-        ax=axes[idx],
-    )
-    axes[idx].set_xlabel("")
-    axes[idx].set_ylabel("Meetwaarde (daily mean)")
-    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
-    axes[idx].set_title(f"Daily Mean Meetwaarde over Time - {naam}")
-    axes[idx].tick_params(axis="x")
-    axes[idx].legend(title="Bemonsteringshoogte")
+for naam_idx, naam in enumerate(naam_list):
+    for col_idx, grootheid in enumerate(grootheid_list):
+        filtered = measurements_daily.filter(
+            (pl.col("Naam") == naam) & (pl.col("Grootheid.Code") == grootheid)
+        ).sort("time")
+
+        ax = axes[naam_idx][col_idx]
+        if len(filtered) > 0:
+            # Get unique sampling heights and assign colors
+            unique_heights = (
+                filtered.select("WaarnemingMetadata.Bemonsteringshoogte")
+                .unique()
+                .sort(by="WaarnemingMetadata.Bemonsteringshoogte")[
+                    "WaarnemingMetadata.Bemonsteringshoogte"
+                ]
+                .to_list()
+            )
+            colors = plt.colormaps.get_cmap("RdYlBu")(
+                np.linspace(0, 1, len(unique_heights))
+            )
+            height_color_map = {
+                height: colors[i] for i, height in enumerate(unique_heights)
+            }
+
+            # Plot each sampling height with different color
+            for height in unique_heights:
+                height_data = filtered.filter(
+                    pl.col("WaarnemingMetadata.Bemonsteringshoogte") == height
+                ).sort("time")
+                if len(height_data) > 0:
+                    ax.plot(
+                        height_data["time"],
+                        height_data["Meetwaarde.Waarde_Numeriek"],
+                        linewidth=0.5,
+                        label=f"Height: {height}",
+                        color=height_color_map[height],
+                    )
+
+            eenheid = (
+                filtered.select("Eenheid.Code").unique()["Eenheid.Code"].to_list()[0]
+                if len(filtered) > 0
+                else ""
+            )
+            ax.set_title(f"{grootheid} for {naam}")
+            ax.set_ylabel(f"{grootheid} [{eenheid}]")
+            ax.set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
+            ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.savefig(
@@ -522,7 +595,6 @@ plt.savefig(
 plt.show()
 
 # %%
-import pandas as pd
 
 measurements_a = measurements_daily.with_columns(
     pl.col("time").dt.strftime("%Y-%m").alias("year_month")
@@ -862,103 +934,6 @@ plt.savefig(
 )
 plt.show()
 # %%
-# X-Y plot for Houtribsluis locations
-
-combs = [
-    #  ("Kornwerderzand IJsselmeer spui", "Kornwerderzand Spuihaven zuid"),
-    ("Den Oever Stevinsluizen zuid", "Den Oever, spuisluis, binnen"),
-]
-
-# Create list of all names from combs pairs
-all_names = [name for pair in combs for name in pair]
-
-houtribsluis_data = measurements.filter(pl.col("Naam").is_in(all_names))
-
-if len(houtribsluis_data) > 0:
-    houtribsluis_df = houtribsluis_data.sort("time").to_pandas()
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-
-    unique_names = houtribsluis_df["Naam"].unique()
-    if len(unique_names) >= 2:
-        data1 = houtribsluis_df[houtribsluis_df["Naam"] == unique_names[0]].reset_index(
-            drop=True
-        )
-        data2 = houtribsluis_df[houtribsluis_df["Naam"] == unique_names[1]].reset_index(
-            drop=True
-        )
-        # Align data to same length
-        min_len = min(len(data1), len(data2))
-        data1 = data1.iloc[:min_len].copy()
-        data2 = data2.iloc[:min_len].copy()
-        data1["year"] = data1["time"].dt.year
-        colors = data1["year"].apply(lambda x: plt.cm.Set2(x % 10))
-        ax.scatter(
-            data1["Meetwaarde.Waarde_Numeriek"],
-            data2["Meetwaarde.Waarde_Numeriek"],
-            marker="o",
-            s=30,
-            c=data1["year"],
-            cmap="Set2",
-            alpha=0.7,
-        )
-        cbar = plt.colorbar(ax.collections[0], ax=ax)
-        cbar.set_label("Year")
-        # Add linear trendline
-        mask = (
-            data1["Meetwaarde.Waarde_Numeriek"].notna()
-            & data2["Meetwaarde.Waarde_Numeriek"].notna()
-        )
-        if mask.sum() > 1:
-            z = np.polyfit(
-                data1.loc[mask, "Meetwaarde.Waarde_Numeriek"],
-                data2.loc[mask, "Meetwaarde.Waarde_Numeriek"],
-                1,
-            )
-            p = np.poly1d(z)
-            x_trend = np.linspace(
-                data1["Meetwaarde.Waarde_Numeriek"].min(),
-                data1["Meetwaarde.Waarde_Numeriek"].max(),
-                100,
-            )
-            ax.plot(x_trend, p(x_trend), "r-", linewidth=2, label="Trendline")
-        # Add 1:10 line
-        x_range = np.array(
-            [
-                data1["Meetwaarde.Waarde_Numeriek"].min(),
-                data1["Meetwaarde.Waarde_Numeriek"].max(),
-            ]
-        )
-        ax.plot(x_range / 10, x_range, "g--", linewidth=2, label="1:10 line")
-        ax.set_xlabel(unique_names[0])
-        ax.set_ylabel(unique_names[1])
-        ax.set_title(
-            f"Water Height Comparison - {unique_names[0]} vs {unique_names[1]}"
-        )
-    else:
-        for naam in houtribsluis_df["Naam"].unique():
-            data = houtribsluis_df[houtribsluis_df["Naam"] == naam]
-            ax.plot(
-                data["time"],
-                data["Meetwaarde.Waarde_Numeriek"],
-                label=naam,
-                marker="o",
-                markersize=3,
-                linewidth=1,
-            )
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Meetwaarde")
-        ax.set_title("Water Height (Meetwaarde) - Houtribsluis Locations")
-    ax.set_ylim(0, 11000)  # Set y-axis to start at 0
-    ax.set_xlim(0, 500)  # Set x-axis to start at 0
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-else:
-    print("No Houtribsluis data found")
-
-# %%
 locations_pl_coords = locations_pl.select(
     [
         "LocationCode",
@@ -969,10 +944,6 @@ locations_pl_coords = locations_pl.select(
         "Eenheid.Code",
     ]
 ).unique()
-
-locations_pl_coords
-
-# %%
 
 # Plot locations
 locations_df = locations_pl_coords.to_pandas()
@@ -1001,6 +972,7 @@ locations_df
 locations_df = locations_df.loc[locations_df["Grootheid.Code"] == "SALNTT"]
 locations_df
 # %%
+# Plot static map
 
 # Create figure with standard projection
 fig, ax = plt.subplots(figsize=(25, 15))
@@ -1181,7 +1153,8 @@ plt.savefig(
 )
 plt.show()
 # %%
-# Create interactive map with leaflet (folium)
+# Plot interactive map with leaflet (folium)
+
 # Calculate center of map
 center_lat = locations_df["Lat"].mean()
 center_lon = locations_df["Lon"].mean()
@@ -1201,11 +1174,11 @@ for idx, (_, row) in enumerate(locations_df.iterrows()):
     # Color based on median value (viridis colormap)
     color_val = row["median_normalized"]
     # Viridis colormap approximation
-    if color_val < 0.25:
+    if color_val < 0.001:
         color = "purple"
-    elif color_val < 0.5:
+    elif color_val < 0.01:
         color = "blue"
-    elif color_val < 0.75:
+    elif color_val < 0.1:
         color = "green"
     else:
         color = "yellow"
@@ -1246,7 +1219,4 @@ m.save(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\saliniteit\interactive_map_salinity_SALNTT_locations.html"
 )
 print("Interactive map saved to: interactive_map_salinity_SALNTT_locations.html")
-from IPython.display import display
-
-display(m)
 # %%

@@ -1,20 +1,31 @@
 # %%
 # Imports
+import base64
 import datetime as dt
+import io
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import ddlpy
 import folium
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
+import seaborn as sns
+from contextily import add_basemap
 
 # enabling debug logging so we can see what happens in the background
 logging.basicConfig()
 logging.getLogger("ddlpy").setLevel(logging.INFO)
 
+# %%
+
+ROOT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse")
+
+DATA_OUTPUT_DIR = ROOT_DIR / "data" / "4_output"
 # %%
 # Locations
 
@@ -150,8 +161,6 @@ selected
 unique_names = selected["Naam"].unique()
 unique_names
 # %%
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def fetch_measurements(args):
@@ -315,7 +324,6 @@ plt.show()
 measurements
 # %%
 # Wind rose plot with locations on map
-import numpy as np
 
 # Get wind direction data
 wind_data_all = measurements_daily.filter(
@@ -342,8 +350,7 @@ m = folium.Map(
 unique_names = sorted(wind_data_all.select("Naam").unique().to_series().to_list())
 
 # Create wind roses as base64 images and add them to map for each location
-import base64
-import io
+
 
 # Calculate min and max wind speeds for normalization
 all_wind_speeds = []
@@ -469,7 +476,6 @@ m.save(
 print("Wind rose map saved")
 # %%
 # Wind rose plot for degree data (0-360) - rows: Naam locations, columns: seasons
-import numpy as np
 
 wind_data_all = measurements_daily.filter(
     pl.col("Grootheid.Code") == "WINDRTG"  # Wind direction code
@@ -557,8 +563,6 @@ percentile_stats = (
 )
 percentile_stats
 # %%
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 sns.set_style("whitegrid")
 
@@ -628,9 +632,6 @@ plt.savefig(
 plt.show()
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 
 sns.set_style("whitegrid")
 colors = plt.cm.plasma(np.linspace(0.3, 1, 10))
@@ -688,9 +689,6 @@ plt.savefig(
 plt.show()
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 
 sns.set_style("whitegrid")
 colors = plt.cm.Greys(np.linspace(0.3, 1, 10))
@@ -778,8 +776,6 @@ plt.show()
 measurements_daily
 # %%
 # X-Y plot for Houtribsluis locations
-import matplotlib.pyplot as plt
-import numpy as np
 
 houtribsluis_data = measurements_daily.filter(
     pl.col("Naam").str.contains("Houtribsluis")
@@ -865,8 +861,6 @@ locations_pl_coords
 # %%
 percentile_stats
 # %%
-import matplotlib.pyplot as plt
-from contextily import add_basemap
 
 # Create figure with standard projection
 fig, ax = plt.subplots(figsize=(25, 15))
@@ -1011,9 +1005,4 @@ m.save(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\wind\interactive_map_wind_locations2.html"
 )
 print("Interactive map saved to: interactive_map_wind_locations.html")
-from IPython.display import display
-
-display(m)
-# %%
-locations_df
 # %%
