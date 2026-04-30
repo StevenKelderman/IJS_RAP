@@ -33,6 +33,7 @@ for file in ymr_files:
                 df.columns = df.columns.str.replace("*", "", regex=False)
                 df["WAARDE"] = pd.to_numeric(df["WAARDE"], errors="coerce")
                 df["DATUM"] = pd.to_datetime(df["DATUM"], format="%Y%m%d")
+                df = df[df["DATUM"] > pd.to_datetime("2018-01-01")]
                 df["NAME"] = first_line
                 df["FILE"] = file.name
                 dfs.append(df)
@@ -52,6 +53,12 @@ if dfs:
 else:
     print("No files were loaded successfully")
 
+# %%
+# Find combinations of NAME and FILE
+if dfs:
+    combinations = result_df[["NAME", "FILE"]].drop_duplicates()
+    print(f"\nCombinations of NAME and FILE:\n{combinations}")
+# %%
 result_df
 # %%
 # Plot WAARDE per DATUM for each FILE
@@ -200,4 +207,267 @@ if dfs:
         plt.show()
 # %%
 file_data
+# %%
+from io import BytesIO
+
+import contextily as ctx
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from PIL import Image
+
+# Yearly mean aggregation
+yearly_mean = (
+    result_df.groupby(["NAME", result_df["DATUM"].dt.year])["WAARDE"]
+    .mean()
+    .reset_index()
+)
+yearly_mean.columns = ["NAME", "year", "WAARDE"]
+
+# Pre-group for fast lookup (avoids filtering in loop)
+yearly_dict: dict[str, np.ndarray] = {}
+for name, group in yearly_mean.groupby("NAME"):
+    yearly_dict[name] = group.sort_values("year")
+
+locaties = gpd.read_file(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\locaties_debiet.gpkg"
+)
+locaties
+# %%
+# Reproject to Web Mercator
+locaties_3857 = locaties.to_crs(epsg=3857)
+
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# Plot first (sets extent correctly)
+# Determine marker and color based on Invoer/Afvoer columns
+colors = []
+markers = []
+sizes = []
+for idx, row in locaties_3857.iterrows():
+    if row.get("Invoer") == "Ja":
+        colors.append("blue")
+        markers.append("^")
+    elif row.get("Afvoer") == "Ja":
+        colors.append("orange")
+        markers.append("v")
+    else:
+        colors.append("red")
+        markers.append("o")
+
+    # Get marker size based on last year's mean value
+    name = row["naam"]
+    if name in yearly_dict and len(yearly_dict[name]) > 0:
+        last_year_mean = yearly_dict[name].iloc[-1]["WAARDE"]
+        # Normalize size: scale last year mean to reasonable marker size
+        markersize = max(50, min(500, last_year_mean * 30))
+    else:
+        markersize = 200
+    sizes.append(markersize)
+
+for i, (idx, row) in enumerate(locaties_3857.iterrows()):
+    locaties_3857.iloc[i : i + 1].plot(
+        ax=ax,
+        alpha=0.5,
+        markersize=sizes[i],
+        color=colors[i],
+        marker=markers[i],
+        zorder=2,
+    )
+    # Add location name as text
+    ax.text(
+        row.geometry.x + 2500,
+        row.geometry.y + 2500,
+        row["naam"],
+        fontsize=9,
+        ha="center",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
+        zorder=3,
+    )
+
+# Then add basemap
+ctx.add_basemap(
+    ax,
+    source=ctx.providers.CartoDB.Positron,
+    zoom=11,
+)
+
+ax.set_title("Debiet Locations")
+
+plt.tight_layout()
+plt.show()
+# %%
+import contextily as ctx
+import matplotlib.pyplot as plt
+import numpy as np
+
+# --- Prepare data -------------------------------------------------------------
+
+# Ensure CRS is Web Mercator
+locaties_3857 = locaties.to_crs(epsg=3857)
+locaties_3857
+# %%
+# --- Main figure --------------------------------------------------------------
+
+fig, ax = plt.subplots(figsize=(18, 16))
+
+# 1. Plot first → sets correct extent
+locaties_3857.plot(
+    ax=ax,
+    alpha=0.8,
+    edgecolor="k",
+    markersize=40,
+    color="black",
+    zorder=2,
+)
+
+ax.set_title("Yearly Mean Debiet by Location with Barplots")
+
+# Get current limits and expand
+xlim = ax.get_xlim()
+ylim = ax.get_ylim()
+x_range = xlim[1] - xlim[0]
+y_range = ylim[1] - ylim[0]
+ax.set_xlim(xlim[0] - 0.1 * x_range, xlim[1] + 0.2 * x_range)
+ax.set_ylim(ylim[0] - 0.1 * y_range, ylim[1] + 0.1 * y_range)
+
+# 2. Then basemap
+ctx.add_basemap(
+    ax,
+    source=ctx.providers.CartoDB.Positron,
+    zoom=11,
+)
+
+# Web mercator → axis labels not meaningful
+ax.set_axis_off()
+
+# --- Add inset barplots -------------------------------------------------------
+
+# Manual plot location overrides (location_name: (x, y))
+plot_location_overrides = {
+    "inlaat Teroelsterkolk (Friesland)": (623683.103, 6964401.631),
+    "inlaat Tacozijl (Friesland)": (624219.029, 6947166.574),
+    "gemaal Buma (Noordoostpolder)": (642031.175, 6962973.111),
+    "gemaal Wouda (Friesland)": (642294.701, 6944600.491),
+    "PWN & WRK III": (583925.035, 6940385.894),
+    "gemaal Colijn laag (Fleverwaard)": (630914, 6890000),
+    "gemaal Colijn hoog (Fleverwaard)": (630886, 6905541.395),
+    "IJssel": (663080.805, 6902965.655),
+    "Roggebotsluis": (648500, 6890000),
+    "Gemaal Roggebot": (665600, 6890000),
+    "Roggebotspui": (683500, 6890000),
+    "Zwarte Water": (674808, 6916009),
+    "gemaal Stroink (Wold en Wieden)": (664933.321, 6938447.449),
+    "gemaal Smeenge (Noordoostpolder)": (652150.545, 6921989.029),
+    "Houtrib spuisluizen (Houtribdijk) aanvoer": (602942, 6893942),
+    "Houtrib spuisluizen (Houtribdijk) afvoer": (604942, 6908942),
+    "Krabbersgat spuisluizen (Houtribdijk) aanvoer": (585987, 6912200),
+    "Krabbersgat spuisluizen (Houtribdijk) afvoer": (587987, 6926200),
+    "Zwarte Water aanvoer": (671208, 6918024),
+    "Zwarte Water afvoer": (689708, 6918024),
+}
+
+# Calculate global y-axis limits
+y_min = min(
+    [
+        yearly_dict[loc.naam]["WAARDE"].min()
+        for loc in locaties_3857.itertuples()
+        if loc.naam in yearly_dict
+    ]
+)
+y_max = max(
+    [
+        yearly_dict[loc.naam]["WAARDE"].max()
+        for loc in locaties_3857.itertuples()
+        if loc.naam in yearly_dict
+    ]
+)
+
+for loc in locaties_3857.itertuples():
+    location_name: str = loc.naam
+
+    if location_name not in yearly_dict:
+        continue
+
+    location_data = yearly_dict[location_name]
+
+    # Determine color based on Invoer/Afvoer columns
+    if loc.Invoer == "Ja":
+        bar_color = "blue"
+    elif loc.Afvoer == "Ja":
+        bar_color = "orange"
+    else:
+        bar_color = "red"
+
+    # --- Create small barplot (lightweight) -----------------------------------
+    fig_bar, ax_bar = plt.subplots(figsize=(2.3, 1.7), dpi=100)
+
+    ax_bar.bar(
+        location_data["year"].astype(str),
+        location_data["WAARDE"].values,
+        color=bar_color,
+        zorder=2,
+    )
+
+    ax_bar.set_xticks(range(len(location_data["year"])))
+    ax_bar.set_xticklabels(
+        location_data["year"].astype(str),
+        fontsize=9,
+    )
+
+    # ax_bar.set_ylim(y_min, y_max)
+    # ax_bar.set_ylabel('Mean Debiet', fontsize=8)
+    ax_bar.grid(axis="y", alpha=0.3, zorder=1)
+    # ax_bar.set_yticks([])
+    ax_bar.set_title(location_name, fontsize=10)
+
+    # Tight layout inside small figure
+    fig_bar.tight_layout(pad=0.5)
+
+    # --- Convert to image -----------------------------------------------------
+    buf = BytesIO()
+    fig_bar.savefig(buf, format="png")
+    buf.seek(0)
+
+    img_array = np.array(Image.open(buf))
+
+    # --- Place on map ---------------------------------------------------------
+    # Use override location if specified, otherwise use original location
+    if location_name in plot_location_overrides:
+        plot_xy = plot_location_overrides[location_name]
+        original_xy = (loc.geometry.x, loc.geometry.y)
+
+        # Draw line from plot to original location
+        ax.plot(
+            [plot_xy[0], original_xy[0]],
+            [plot_xy[1], original_xy[1]],
+            color="black",
+            linestyle="-",
+            linewidth=2,
+            alpha=0.9,
+            zorder=1,
+        )
+    else:
+        plot_xy = (loc.geometry.x, loc.geometry.y)
+
+    imagebox = OffsetImage(img_array, zoom=0.5)
+
+    ab = AnnotationBbox(
+        imagebox,
+        plot_xy,
+        frameon=True,
+        pad=0.2,
+        zorder=3,
+    )
+
+    ax.add_artist(ab)
+
+    plt.close(fig_bar)
+
+# --- Final layout -------------------------------------------------------------
+
+# plt.tight_layout()
+plt.show()
 # %%
