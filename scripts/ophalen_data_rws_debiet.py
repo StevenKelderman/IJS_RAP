@@ -99,11 +99,13 @@ bool_stations = locations.index.isin(
         "lemmer.woudagemaal.stroomkanaal",
         "stavoren.gemaalhoogland.buiten",
         "stavoren.johanfrisokanaal",
+        "olst",
     ]
 )
 bool_grootheid = locations["Grootheid.Code"].isin(["Q"])
+bool_proces = locations["ProcesType"].isin(["meting"])
 
-selected = locations.loc[bool_stations & bool_grootheid]
+selected = locations.loc[bool_stations & bool_grootheid & bool_proces]
 selected
 # %%
 unique_names = selected["Naam"].unique()
@@ -119,8 +121,8 @@ def fetch_measurements(args):
     print(
         f"({idx + 1}/{len(selected)}) Getting measurements for {station_name} ({grootheid}): ({wat})"
     )
-    print("  Start date: 2018-01-01, End date: 2026-03-31")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
+    print("  Start date: 1990-01-01, End date: 2026-03-31")
+    measurements = ddlpy.measurements(row, "1990-01-01", "2026-03-31")
     print(
         f"  Retrieved {len(measurements)} measurements for {station_name} ({grootheid})"
     )
@@ -154,7 +156,10 @@ measurements
 TODAY = dt.datetime.now().strftime("%Y%m%d")
 
 measurements.write_parquet(
-    ROOT_DIR / "data" / "1_raw" / f"measurements_RWS_debiet_2018_2026_{TODAY}.parquet"
+    ROOT_DIR
+    / "data"
+    / "1_raw"
+    / f"measurements_RWS_ijsselmeer_debiet_1990_2026_{TODAY}.parquet"
 )
 # %%
 # Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
@@ -163,7 +168,9 @@ group_cols = [
     "Code",
     "Naam",
     "Grootheid.Code",
+    "Parameter.Code",
     "Eenheid.Code",
+    "WaarnemingMetadata.Statuswaarde",
     "WaardeBewerkingsMethode.Omschrijving",
 ]
 
@@ -178,8 +185,11 @@ measurements_daily = (
     )
     .sort(group_cols + ["time"])
 )
-
-output_dir = ROOT_DIR / "data" / "2_external" / "measurements_RWS_debiet_per_combo"
+measurements_daily
+# %%
+output_dir = (
+    ROOT_DIR / "data" / "2_external" / "measurements_RWS_ijsselmeer_debiet_per_combo"
+)
 output_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -211,13 +221,12 @@ for row in group_keys.iter_rows(named=True):
 print("Done exporting grouped CSV files.")
 # %%
 measurements_daily.group_by("Naam").agg(pl.len()).sort("len", descending=True)
-
 # %%
 # PLot all
 
 unique_names = measurements_daily.select("Naam").unique().to_series().to_list()
 num_plots = len(unique_names)
-fig, axes = plt.subplots(num_plots, 1, figsize=(16, 4 * num_plots), sharex=True)
+fig, axes = plt.subplots(num_plots, 1, figsize=(16, 4 * num_plots), sharex=False)
 if num_plots == 1:
     axes = [axes]
 
@@ -307,7 +316,7 @@ unique_combinations = measurements_daily.select(
 ).unique()
 
 num_plots = len(unique_combinations)
-fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots), sharex=True)
+fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots), sharex=False)
 
 if num_plots == 1:
     axes = [axes]
@@ -662,4 +671,86 @@ legend_html = """
 # Save interactive map
 m.save(DATA_OUTPUT_DIR / "figuren" / "debiet" / "interactive_map_debiet_locations.html")
 print("Interactive map saved to: interactive_map_debiet_locations.html")
+# %%
+import pandas as pd
+
+measurements_daily
+
+measurements_daily_filt = measurements_daily.filter(
+    (pl.col("time") >= pd.Timestamp("1990-01-01"))
+    & (pl.col("time") <= pd.Timestamp("2026-12-31"))
+)
+measurements_daily_filt
+# %%
+
+# Plot daily max and min WAARDE per location (by day of year)
+# Convert from m³/s to miljoen m³/d: multiply by 86.4
+files = measurements_daily_filt["Naam"].unique()
+for file in files:
+    file_data = (
+        measurements_daily_filt.filter(measurements_daily_filt["Naam"] == file)
+        .sort("time")
+        .to_pandas()
+        .reset_index(drop=True)
+    )
+    file_data["Meetwaarde.Waarde_Numeriek"] = (
+        file_data["Meetwaarde.Waarde_Numeriek"] * 0.0864
+    )
+    file_data["DayOfYear"] = file_data["time"].dt.dayofyear
+    file_data["DateNoYear"] = file_data["time"].dt.strftime("%m-%d")
+
+    daily_stats = (
+        file_data.groupby("DayOfYear")["Meetwaarde.Waarde_Numeriek"]
+        .agg(["min", "max"])
+        .reset_index()
+    )
+    daily_stats["DateNoYear"] = pd.to_datetime(
+        daily_stats["DayOfYear"], format="%j"
+    ).dt.strftime("%m-%d")
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    ax.plot(
+        daily_stats["DayOfYear"],
+        daily_stats["max"],
+        marker="o",
+        linestyle="-",
+        color="tab:blue",
+        label="Max",
+        markersize=3,
+    )
+    ax.plot(
+        daily_stats["DayOfYear"],
+        daily_stats["min"],
+        marker="o",
+        linestyle="-",
+        color="tab:orange",
+        label="Min",
+        markersize=3,
+    )
+    ax.fill_between(
+        daily_stats["DayOfYear"],
+        daily_stats["min"],
+        daily_stats["max"],
+        alpha=0.2,
+        color="tab:gray",
+    )
+
+    ax.set_xlabel("Date (MM-DD)")
+    ax.set_ylabel("Debiet in miljoen m3 per dag")
+    ax.legend()
+
+    plt.title(
+        f"Daily Min/Max Debiet in miljoen m3 per dag - periode (1990-2026)\n{file}"
+    )
+    ax.set_xticks(range(0, 365, 30))
+    ax.set_xticklabels(
+        [
+            pd.to_datetime(str(day + 1), format="%j").strftime("%m-%d")
+            for day in range(0, 365, 30)
+        ]
+    )
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
 # %%
