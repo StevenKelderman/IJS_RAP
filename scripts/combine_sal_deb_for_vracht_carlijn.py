@@ -48,7 +48,7 @@ if dfs:
     print(result_df_sal.head())
 else:
     print("No files were loaded successfully")
-result_df_sal # mg/l
+result_df_sal  # mg/l
 # %%
 from pathlib import Path
 
@@ -99,10 +99,12 @@ if dfs:
     print(result_df_deb.head())
 else:
     print("No files were loaded successfully")
-result_df_deb # Q in miljoen m3 per dag
+result_df_deb  # Q in miljoen m3 per dag
 # %%
-merged_df = pd.merge(result_df_sal, result_df_deb, on=["DATUM", "NAME"], suffixes=("_sal", "_deb"))
-merged_df["WAARDE"] = (merged_df["WAARDE_sal"] * merged_df["WAARDE_deb"]) * 1000 
+merged_df = pd.merge(
+    result_df_sal, result_df_deb, on=["DATUM", "NAME"], suffixes=("_sal", "_deb")
+)
+merged_df["WAARDE"] = (merged_df["WAARDE_sal"] * merged_df["WAARDE_deb"]) * 1000
 # Convert mg/l and million m3/day to kg/day
 merged_df = merged_df[merged_df["NAME"] != "Berging IJsselmeer"]
 merged_df
@@ -117,12 +119,16 @@ yearly_summary
 import matplotlib.pyplot as plt
 
 # Pivot to have years as columns
-yearly_pivot = yearly_summary.pivot(index="LOCATION", columns="YEAR", values="WAARDE_SUM")
+yearly_pivot = yearly_summary.pivot(
+    index="LOCATION", columns="YEAR", values="WAARDE_SUM"
+)
 print(yearly_pivot)
 
 # Plot years as x-axis for each unique location as subplot
 locations = yearly_summary["LOCATION"].unique()
-fig, axes = plt.subplots(len(locations), 1, figsize=(12, 4 * len(locations)), sharey=True)
+fig, axes = plt.subplots(
+    len(locations), 1, figsize=(12, 4 * len(locations)), sharey=True
+)
 
 if len(locations) == 1:
     axes = [axes]
@@ -191,7 +197,11 @@ if dfs:
     pivot_outflow = -pivot_outflow
 
     # Calculate netto flow (additions - subtractions)
-    netto_flow = (pivot_inflow.sum(axis=1) + pivot_outflow.sum(axis=1)).rolling(window=14, center=True, min_periods=1).mean()
+    netto_flow = (
+        (pivot_inflow.sum(axis=1) + pivot_outflow.sum(axis=1))
+        .rolling(window=14, center=True, min_periods=1)
+        .mean()
+    )
 
     # Process Berging IJsselmeer data
     # berging_ijsselmeer["YearMonth"] = berging_ijsselmeer["DATUM"].dt.to_period("M")

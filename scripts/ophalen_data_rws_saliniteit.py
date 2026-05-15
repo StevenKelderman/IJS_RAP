@@ -151,10 +151,8 @@ bool_parameter_SAL = locations["Parameter.Code"].isin(["NVT"])
 selected = locations.loc[
     bool_stations
     & bool_procestype
-    & (
-        (bool_grootheid_CONC & bool_parameter_CL)
-        # | (bool_grootheid_SAL & bool_parameter_SAL)
-    )
+    & (bool_grootheid_CONC & bool_parameter_CL)
+    # | (bool_grootheid_SAL & bool_parameter_SAL)
 ]
 selected
 
@@ -173,6 +171,7 @@ unique_location_codes = (
 unique_location_codes
 # %%
 
+
 def fetch_measurements(args):
     idx, row, start_date, end_date = args
     station_name = row["Naam"]
@@ -189,32 +188,45 @@ def fetch_measurements(args):
 
 
 # Date ranges: yearly periods from 1990 to 2026
-date_ranges = [
-    (f"{year}-01-01", f"{year}-12-31")
-    for year in range(1990, 2027)
-]
+date_ranges = [(f"{year}-01-01", f"{year}-12-31") for year in range(1990, 2027)]
+
 
 # Helper function to create progress tracking filename
 def get_location_progress_file(location_name):
-    return PROJECT_DIR / "analyse" / "data" / "1_raw" /"per_location_per_year" / "saliniteit" / f".progress_{location_name.replace(' ', '_').replace(',', '_')}.json"
+    return (
+        PROJECT_DIR
+        / "analyse"
+        / "data"
+        / "1_raw"
+        / "per_location_per_year"
+        / "saliniteit"
+        / f".progress_{location_name.replace(' ', '_').replace(',', '_')}.json"
+    )
+
 
 # Helper function to load completed date ranges for a location
 def load_completed_ranges(location_name):
     progress_file = get_location_progress_file(location_name)
     if progress_file.exists():
         import json
-        with open(progress_file, 'r') as f:
+
+        with open(progress_file, "r") as f:
             return json.load(f)
     return []
+
 
 # Helper function to save completed date ranges for a location
 def save_completed_ranges(location_name, completed_ranges):
     progress_file = get_location_progress_file(location_name)
     import json
-    with open(progress_file, 'w') as f:
+
+    with open(progress_file, "w") as f:
         json.dump(completed_ranges, f)
 
-print(f"Starting robust processing of {len(selected)} stations across {len(date_ranges)} date ranges...")
+
+print(
+    f"Starting robust processing of {len(selected)} stations across {len(date_ranges)} date ranges..."
+)
 
 # Group by location first - this is the primary grouping
 grouped_by_location = selected.groupby("Naam")
@@ -224,40 +236,54 @@ for location_name, location_group in grouped_by_location:
     print(f"Processing Location: {location_name}")
     print(f"  Total parameters: {len(location_group)}")
     print(f"{'='*80}")
-    
+
     # Load already completed date ranges for this location
     completed_ranges = load_completed_ranges(location_name)
     print(f"  Already completed date ranges: {completed_ranges}")
-    
+
     for date_idx, (start_date, end_date) in enumerate(date_ranges):
         date_range_key = f"{start_date}_to_{end_date}"
-        
+
         # Skip if already completed
         if date_range_key in completed_ranges:
-            print(f"\n  [{date_idx + 1}/{len(date_ranges)}] Skipping date range {start_date} to {end_date} (already completed)")
+            print(
+                f"\n  [{date_idx + 1}/{len(date_ranges)}] Skipping date range {start_date} to {end_date} (already completed)"
+            )
             continue
-        
-        print(f"\n  [{date_idx + 1}/{len(date_ranges)}] Processing date range {start_date} to {end_date}")
-        
+
+        print(
+            f"\n  [{date_idx + 1}/{len(date_ranges)}] Processing date range {start_date} to {end_date}"
+        )
+
         # Create output file for this location+daterange combination
-        location_file = PROJECT_DIR / "analyse" / "data" / "1_raw" /"per_location_per_year" / "saliniteit" / f"measurements_RWS_ijsselmeer_saliniteit_{location_name.replace(' ', '_').replace(',', '')}_{date_range_key[0:4]}_{TODAY}.parquet"
-        
+        location_file = (
+            PROJECT_DIR
+            / "analyse"
+            / "data"
+            / "1_raw"
+            / "per_location_per_year"
+            / "saliniteit"
+            / f"measurements_RWS_ijsselmeer_saliniteit_{location_name.replace(' ', '_').replace(',', '')}_{date_range_key[0:4]}_{TODAY}.parquet"
+        )
+
         if location_file.exists():
             print(f"    File already exists, skipping: {location_file.name}")
             completed_ranges.append(date_range_key)
             save_completed_ranges(location_name, completed_ranges)
             continue
-        
+
         # Process all parameters for this location + date range with threading
         n_params = len(location_group)
         measurements_list = []
-        
+
         with ThreadPoolExecutor(max_workers=24) as executor:
             futures = {
-                executor.submit(fetch_measurements, (idx, row, start_date, end_date)): idx
+                executor.submit(
+                    fetch_measurements, (idx, row, start_date, end_date)
+                ): idx
                 for idx, (_, row) in enumerate(location_group.iterrows())
             }
-            
+
             completed = 0
             for future in as_completed(futures):
                 try:
@@ -269,28 +295,47 @@ for location_name, location_group in grouped_by_location:
                 except Exception as e:
                     print(f"    Error fetching measurement: {e}")
                     completed += 1
-        
+
         # Convert and save results for this location + date range
         if measurements_list:
             converted = [
-                pl.from_pandas(df, include_index=True) for df in measurements_list if not df.empty
+                pl.from_pandas(df, include_index=True)
+                for df in measurements_list
+                if not df.empty
             ]
             if converted:
                 combined = pl.concat(converted, how="diagonal_relaxed")
                 combined.write_parquet(location_file)
-                print(f"    Saved {len(measurements_list)} parameters to {location_file.name}")
-        
+                print(
+                    f"    Saved {len(measurements_list)} parameters to {location_file.name}"
+                )
+
         # Mark this date range as completed for this location
         completed_ranges.append(date_range_key)
         save_completed_ranges(location_name, completed_ranges)
         print(f"    Progress saved for {location_name}")
 
 print(f"\n{'='*80}")
-print(f"Completed processing of all {len(grouped_by_location)} locations across all date ranges")
+print(
+    f"Completed processing of all {len(grouped_by_location)} locations across all date ranges"
+)
 print(f"{'='*80}")
 # %%
 # READ WADAR
-measurements = pl.scan_parquet(PROJECT_DIR / "analyse" / "data" / "1_raw" / "per_location_per_year" / "saliniteit" / "*.parquet", missing_columns="insert").filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50).collect()
+measurements = (
+    pl.scan_parquet(
+        PROJECT_DIR
+        / "analyse"
+        / "data"
+        / "1_raw"
+        / "per_location_per_year"
+        / "saliniteit"
+        / "*.parquet",
+        missing_columns="insert",
+    )
+    .filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50)
+    .collect()
+)
 measurements
 # %%
 # Convert bodemhoogte from string to int
@@ -341,33 +386,86 @@ measurements_daily
 # %%
 # Create overview for each Naam: time range and measurement count per year
 overview = (
-    measurements_daily
-    .with_columns(
+    measurements_daily.with_columns(
         pl.col("time").cast(pl.Date).dt.year().alias("year")
     )
-    .group_by(["Naam", "year","Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"])
-    .agg(pl.len().alias("count"))
-    .pivot(index=["Naam", "Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"], on="year", values="count", aggregate_function="sum")
-    .with_columns(
-        pl.col("Naam").alias("Station")
+    .group_by(
+        [
+            "Naam",
+            "year",
+            "Grootheid.Code",
+            "Eenheid.Code",
+            "WaarnemingMetadata.Bemonsteringshoogte",
+        ]
     )
+    .agg(pl.len().alias("count"))
+    .pivot(
+        index=[
+            "Naam",
+            "Grootheid.Code",
+            "Eenheid.Code",
+            "WaarnemingMetadata.Bemonsteringshoogte",
+        ],
+        on="year",
+        values="count",
+        aggregate_function="sum",
+    )
+    .with_columns(pl.col("Naam").alias("Station"))
 )
 
 # Add time range per Naam
-time_range = (
-    measurements_daily
-    .group_by("Naam", "Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte")
-    .agg(
-        pl.col("time").min().alias("start_time"),
-        pl.col("time").max().alias("end_time"),
-        pl.len().alias("total_measurements")
-    )
+time_range = measurements_daily.group_by(
+    "Naam", "Grootheid.Code", "Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"
+).agg(
+    pl.col("time").min().alias("start_time"),
+    pl.col("time").max().alias("end_time"),
+    pl.len().alias("total_measurements"),
 )
 
-overview_with_range = time_range.join(overview, on=["Naam", "Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"], how="left")
+overview_with_range = time_range.join(
+    overview,
+    on=[
+        "Naam",
+        "Grootheid.Code",
+        "Eenheid.Code",
+        "WaarnemingMetadata.Bemonsteringshoogte",
+    ],
+    how="left",
+)
 # Sort year columns numerically
-year_cols = sorted([col for col in overview_with_range.columns if col not in ["Naam", "Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte", "start_time", "end_time", "total_measurements", "Station"]], key=int)
-overview_with_range = overview_with_range.select(["Naam", "Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte", "start_time", "end_time", "total_measurements"] + year_cols + (["Station"] if "Station" in overview_with_range.columns else [])).sort(["Naam", "Grootheid.Code","Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"])
+year_cols = sorted(
+    [
+        col
+        for col in overview_with_range.columns
+        if col
+        not in [
+            "Naam",
+            "Grootheid.Code",
+            "Eenheid.Code",
+            "WaarnemingMetadata.Bemonsteringshoogte",
+            "start_time",
+            "end_time",
+            "total_measurements",
+            "Station",
+        ]
+    ],
+    key=int,
+)
+overview_with_range = overview_with_range.select(
+    [
+        "Naam",
+        "Grootheid.Code",
+        "Eenheid.Code",
+        "WaarnemingMetadata.Bemonsteringshoogte",
+        "start_time",
+        "end_time",
+        "total_measurements",
+    ]
+    + year_cols
+    + (["Station"] if "Station" in overview_with_range.columns else [])
+).sort(
+    ["Naam", "Grootheid.Code", "Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"]
+)
 
 overview_with_range.write_excel(
     DATA_OUTPUT_DIR / "overzicht_saliniteit_per_station_parameter.xlsx",
@@ -484,7 +582,9 @@ grootheid_list = (
 )
 num_rows = len(naam_list)
 num_cols = len(grootheid_list)
-fig, axes = plt.subplots(num_rows, num_cols, figsize=(16, 4 * num_rows), sharex=False, sharey=False)
+fig, axes = plt.subplots(
+    num_rows, num_cols, figsize=(16, 4 * num_rows), sharex=False, sharey=False
+)
 if num_rows == 1 and num_cols == 1:
     axes = [[axes]]
 elif num_rows == 1:
@@ -539,13 +639,21 @@ for naam_idx, naam in enumerate(naam_list):
             ax.set_ylabel(f"{grootheid} [{eenheid}]")
             # ax.set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
             ax.set_xlim(dt.datetime(2009, 12, 31), dt.datetime(2026, 4, 1))
-            ax.axvspan(dt.datetime(2018, 1, 1), dt.datetime(2026, 1, 1), alpha=0.2, color="grey")
+            ax.axvspan(
+                dt.datetime(2018, 1, 1),
+                dt.datetime(2026, 1, 1),
+                alpha=0.2,
+                color="grey",
+            )
             ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "time_series_daily_mean_meetwaarde_per_station.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "time_series_daily_mean_meetwaarde_per_station.png",
     dpi=300,
 )
 plt.show()
@@ -636,7 +744,10 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "seasonal_median_meetwaarde_per_station.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "seasonal_median_meetwaarde_per_station.png",
     dpi=300,
 )
 plt.show()
@@ -692,7 +803,10 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "monthly_median_meetwaarde_per_station.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "monthly_median_meetwaarde_per_station.png",
     dpi=300,
 )
 plt.show()
@@ -828,7 +942,10 @@ for combo in combinations:
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "monthly_median_meetwaarde_boxplot_per_station.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "monthly_median_meetwaarde_boxplot_per_station.png",
     dpi=300,
 )
 plt.show()
@@ -887,7 +1004,10 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "monthly_median_meetwaarde_by_month_yearly_colors_per_station.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "monthly_median_meetwaarde_by_month_yearly_colors_per_station.png",
     dpi=300,
 )
 plt.show()
@@ -971,7 +1091,10 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "monthly_median_meetwaarde_by_month_yearly_colors_ci_per_station.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "monthly_median_meetwaarde_by_month_yearly_colors_ci_per_station.png",
     dpi=300,
 )
 plt.show()
@@ -1032,7 +1155,10 @@ for year_idx, year in enumerate(unique_years):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "monthly_mean_meetwaarde_by_location_yearly_subplots.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "monthly_mean_meetwaarde_by_location_yearly_subplots.png",
     dpi=300,
 )
 plt.show()
@@ -1133,7 +1259,10 @@ ax.set_xlabel("Longitude")
 ax.set_ylabel("Latitude")
 plt.title("Salinity Measurement Locations (OpenStreetMap)")
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "measurement_locations_CONCTTE_map.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "measurement_locations_CONCTTE_map.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -1190,7 +1319,10 @@ for idx, naam in enumerate(measurements_daily["Naam"].unique().sort()):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "boxplot_meetwaarde_by_height_parameter_per_location.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "boxplot_meetwaarde_by_height_parameter_per_location.png",
     dpi=300,
 )
 plt.show()
@@ -1250,7 +1382,10 @@ for param_idx, param in enumerate(unique_parameters):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "boxplot_per_parameter_all_locations_heights.png",
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "boxplot_per_parameter_all_locations_heights.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -1319,7 +1454,10 @@ legend_html = """
 """
 # Save interactive map
 m.save(
-    DATA_OUTPUT_DIR / "figuren" / "saliniteit" / "interactive_map_salinity_SALNTT_locations.html"
+    DATA_OUTPUT_DIR
+    / "figuren"
+    / "saliniteit"
+    / "interactive_map_salinity_SALNTT_locations.html"
 )
 print("Interactive map saved to: interactive_map_salinity_SALNTT_locations.html")
 # %%
