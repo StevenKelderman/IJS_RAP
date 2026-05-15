@@ -20,12 +20,14 @@ logging.basicConfig()
 logging.getLogger("ddlpy").setLevel(logging.INFO)
 
 # %%
+# Settings
+PROJECT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer")
 
-ROOT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse")
+DATA_OUTPUT_DIR = PROJECT_DIR / "analyse" / "data" / "4_output"
 
-DATA_OUTPUT_DIR = ROOT_DIR / "data" / "4_output"
+TODAY = dt.datetime.now().strftime("%Y%m%d")
 # %%
-
+# Import locations WADAR
 locations = ddlpy.locations()
 
 ## also add code as a variable
@@ -34,6 +36,7 @@ locations.index.name = "LocationCode"
 locations_pl = pl.from_pandas(locations, include_index=True)
 locations_pl
 # %%
+# Select rows to process from WADAR
 locations_pl = locations_pl.filter(
     # (
     #     (pl.col("LocationCode").str.contains("ijsselmeer"))
@@ -155,64 +158,139 @@ unique_names = selected["Naam"].unique()
 unique_names
 # %%
 
-
 def fetch_measurements(args):
-    idx, index, row = args
+    idx, row, start_date, end_date = args
     station_name = row["Naam"]
-    grootheid = row["Grootheid.Code"]
-    wat = row["Parameter_Wat_Omschrijving"]
+    grootheid_code = row["Grootheid.Code"]
+    parameter_wat_omschrijving = row["Parameter_Wat_Omschrijving"]
     print(
-        f"({idx + 1}/{len(selected)}) Getting measurements for {station_name} ({grootheid}): ({wat})"
+        f"({idx}) Getting measurements for {station_name} ({grootheid_code}): ({parameter_wat_omschrijving}) from {start_date} to {end_date}"
     )
-    print("  Start date: 2018-01-01, End date: 2026-03-31")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
+    measurements = ddlpy.measurements(row, start_date, end_date)
     print(
-        f"  Retrieved {len(measurements)} measurements for {station_name} ({grootheid})"
+        f"  Retrieved {len(measurements)} measurements for {station_name} ({grootheid_code})"
     )
     return measurements
 
 
-all_measurements = []
-print(f"Starting processing of {len(selected)} stations...")
-with ThreadPoolExecutor(max_workers=16) as executor:
-    futures = [
-        executor.submit(fetch_measurements, (idx, index, row))
-        for idx, (index, row) in enumerate(selected.iterrows())
-    ]
-    for future in as_completed(futures):
-        all_measurements.append(future.result())
-print(f"Completed processing of all {len(selected)} stations")
-# %%
-converted_measurements = [
-    pl.from_pandas(df, include_index=True) for df in all_measurements if not df.empty
+# Date ranges: yearly periods from 1990 to 2026
+date_ranges = [
+    (f"{year}-01-01", f"{year}-12-31")
+    for year in range(1990, 2027)
 ]
-if converted_measurements:
-    measurements = pl.concat(converted_measurements)
-else:
-    measurements = pl.DataFrame()
-# %%
-# EXPORT TO PARQUET
 
-TODAY = dt.datetime.now().strftime("%Y%m%d")
+# Helper function to create progress tracking filename
+def get_location_progress_file(location_name):
+    return PROJECT_DIR / "analyse" / "data" / "1_raw" /"per_location_per_year" / "waterhoogte" / f".progress_{location_name.replace(' ', '_').replace(',', '_')}.json"
 
-measurements.write_parquet(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_waterhoogte_2018_2026_{TODAY}.parquet"
-)
-measurements.head()
+# Helper function to load completed date ranges for a location
+def load_completed_ranges(location_name):
+    progress_file = get_location_progress_file(location_name)
+    if progress_file.exists():
+        import json
+        with open(progress_file, 'r') as f:
+            return json.load(f)
+    return []
+
+# Helper function to save completed date ranges for a location
+def save_completed_ranges(location_name, completed_ranges):
+    progress_file = get_location_progress_file(location_name)
+    import json
+    with open(progress_file, 'w') as f:
+        json.dump(completed_ranges, f)
+
+print(f"Starting robust processing of {len(selected)} stations across {len(date_ranges)} date ranges...")
+
+# Group by location first - this is the primary grouping
+grouped_by_location = selected.groupby("Naam")
+
+for location_name, location_group in grouped_by_location:
+    print(f"\n{'='*80}")
+    print(f"Processing Location: {location_name}")
+    print(f"  Total parameters: {len(location_group)}")
+    print(f"{'='*80}")
+    
+    # Load already completed date ranges for this location
+    completed_ranges = load_completed_ranges(location_name)
+    print(f"  Already completed date ranges: {completed_ranges}")
+    
+    for date_idx, (start_date, end_date) in enumerate(date_ranges):
+        date_range_key = f"{start_date}_to_{end_date}"
+        
+        # Skip if already completed
+        if date_range_key in completed_ranges:
+            print(f"\n  [{date_idx + 1}/{len(date_ranges)}] Skipping date range {start_date} to {end_date} (already completed)")
+            continue
+        
+        print(f"\n  [{date_idx + 1}/{len(date_ranges)}] Processing date range {start_date} to {end_date}")
+        
+        # Create output file for this location+daterange combination
+        location_file = PROJECT_DIR / "analyse" / "data" / "1_raw" /"per_location_per_year" / "waterhoogte" / f"measurements_RWS_ijsselmeer_waterhoogte_{location_name.replace(' ', '_').replace(',', '')}_{date_range_key[0:4]}_{TODAY}.parquet"
+        
+        if location_file.exists():
+            print(f"    File already exists, skipping: {location_file.name}")
+            completed_ranges.append(date_range_key)
+            save_completed_ranges(location_name, completed_ranges)
+            continue
+        
+        # Process all parameters for this location + date range with threading
+        n_params = len(location_group)
+        measurements_list = []
+        
+        with ThreadPoolExecutor(max_workers=24) as executor:
+            futures = {
+                executor.submit(fetch_measurements, (idx, row, start_date, end_date)): idx
+                for idx, (_, row) in enumerate(location_group.iterrows())
+            }
+            
+            completed = 0
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result is not None and not result.empty:
+                        measurements_list.append(result)
+                    completed += 1
+                    print(f"    Progress: {completed}/{n_params} parameters fetched")
+                except Exception as e:
+                    print(f"    Error fetching measurement: {e}")
+                    completed += 1
+        
+        # Convert and save results for this location + date range
+        if measurements_list:
+            converted = [
+                pl.from_pandas(df, include_index=True) for df in measurements_list if not df.empty
+            ]
+            if converted:
+                combined = pl.concat(converted, how="diagonal_relaxed")
+                combined.write_parquet(location_file)
+                print(f"    Saved {len(measurements_list)} parameters to {location_file.name}")
+        
+        # Mark this date range as completed for this location
+        completed_ranges.append(date_range_key)
+        save_completed_ranges(location_name, completed_ranges)
+        print(f"    Progress saved for {location_name}")
+
+print(f"\n{'='*80}")
+print(f"Completed processing of all {len(grouped_by_location)} locations across all date ranges")
+print(f"{'='*80}")
 # %%
+# READ WADAR
 # Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
 
 group_cols = [
     "Code",
     "Naam",
     "Grootheid.Code",
+    "Parameter_Wat_Omschrijving",
     "Eenheid.Code",
     "WaardeBewerkingsMethode.Omschrijving",
 ]
 
 # Aggregate 10-minute data to daily means per station/parameter/height combination
 measurements_daily = (
-    measurements.with_columns(
+    pl.scan_parquet(PROJECT_DIR / "analyse" / "data" / "1_raw" / "per_location_per_year" / "waterhoogte" / "*.parquet", missing_columns="insert")
+    .filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50)
+    .with_columns(
         pl.col("time").cast(pl.Datetime, strict=False).dt.date().alias("time")
     )
     .group_by(group_cols + ["time"])
@@ -220,8 +298,44 @@ measurements_daily = (
         pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("Meetwaarde.Waarde_Numeriek")
     )
     .sort(group_cols + ["time"])
+    .collect()
+)
+measurements_daily
+# %%
+# Create overview for each Naam: time range and measurement count per year
+overview = (
+    measurements_daily
+    .with_columns(
+        pl.col("time").cast(pl.Date).dt.year().alias("year")
+    )
+    .group_by(["Naam", "year", "Parameter_Wat_Omschrijving"])
+    .agg(pl.len().alias("count"))
+    .pivot(index=["Naam", "Parameter_Wat_Omschrijving"], on="year", values="count", aggregate_function="sum")
+    .with_columns(
+        pl.col("Naam").alias("Station")
+    )
 )
 
+# Add time range per Naam
+time_range = (
+    measurements_daily
+    .group_by("Naam", "Parameter_Wat_Omschrijving")
+    .agg(
+        pl.col("time").min().alias("start_time"),
+        pl.col("time").max().alias("end_time"),
+        pl.len().alias("total_measurements")
+    )
+)
+
+overview_with_range = time_range.join(overview, on=["Naam", "Parameter_Wat_Omschrijving"], how="left").sort(["Naam", "Parameter_Wat_Omschrijving"])
+# Sort year columns numerically
+year_cols = sorted([col for col in overview_with_range.columns if col not in ["Naam", "Parameter_Wat_Omschrijving", "start_time", "end_time", "total_measurements", "Station"]], key=int)
+overview_with_range = overview_with_range.select(["Naam", "Parameter_Wat_Omschrijving", "start_time", "end_time", "total_measurements"] + year_cols + (["Station"] if "Station" in overview_with_range.columns else []))
+
+overview_with_range.write_excel(
+    DATA_OUTPUT_DIR / "overzicht_waterhoogte_per_station_parameter.xlsx",
+)
+# %%
 output_dir = Path(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\2_external\measurements_RWS_waterhoogte_per_combo"
 )
@@ -255,37 +369,6 @@ for row in group_keys.iter_rows(named=True):
 
 print("Done exporting grouped CSV files.")
 # %%
-measurements_daily.group_by("Naam").agg(pl.len()).sort("len", descending=True)
-# %%
-measurements_daily
-# %%
-
-unique_names = measurements_daily["Naam"].unique()
-num_plots = len(unique_names)
-fig, axes = plt.subplots(
-    num_plots, 1, figsize=(12, 4 * num_plots), sharex=True, sharey=True
-)
-
-for idx, naam in enumerate(unique_names):
-    filtered = measurements_daily.filter(pl.col("Naam") == naam)
-    axes[idx].plot(
-        filtered["time"], filtered["Meetwaarde.Waarde_Numeriek"], linewidth=0.5
-    )
-    axes[idx].axhline(y=0, color="red", linestyle="--", linewidth=0.5)
-    axes[idx].set_title(f"Measurements for {naam}")
-    axes[idx].set_ylabel("Waarde_Numeriek")
-    axes[idx].set_xlabel("")
-    axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
-    axes[idx].grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\all_measurements_by_naam.png",
-    dpi=300,
-    bbox_inches="tight",
-)
-plt.show()
-# %%
 # Generate median, 90th percentile, and 10th percentile per Naam
 percentile_stats = (
     measurements_daily.group_by(["Naam", "Grootheid.Code", "Eenheid.Code"])
@@ -299,10 +382,40 @@ percentile_stats = (
 )
 percentile_stats
 # %%
+# Plot timeseries for each station/parameter combination
+
+unique_names = measurements_daily["Naam"].unique()
+num_plots = len(unique_names)
+fig, axes = plt.subplots(
+    num_plots, 1, figsize=(12, 4 * num_plots), sharex=False, sharey=False
+)
+
+for idx, naam in enumerate(unique_names):
+    filtered = measurements_daily.filter(pl.col("Naam") == naam)
+    axes[idx].plot(
+        filtered["time"], filtered["Meetwaarde.Waarde_Numeriek"], linewidth=0.5
+    )
+    axes[idx].axhline(y=0, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
+    axes[idx].set_title(f"Waterhoogte dagelijks voor {naam}")
+    axes[idx].set_ylabel("Waterhoogte [cm NAP]")
+    axes[idx].set_xlabel("")
+    # axes[idx].set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
+    axes[idx].set_xlim(dt.datetime(1989, 12, 31), dt.datetime(2026, 4, 1))
+    axes[idx].axvspan(dt.datetime(2018, 1, 1), dt.datetime(2026, 1, 1), alpha=0.2, color="grey")
+    axes[idx].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(
+    DATA_OUTPUT_DIR / "figuren" / "waterhoogte" / "timeseries_per_station.png",
+        dpi=300,
+    bbox_inches="tight",
+)
+plt.show()
+# %%
 # Plot showing 1 year with each year colored differently (using monthly means)
 
 sns.set_style("whitegrid")
-colors = plt.cm.plasma(np.linspace(0.3, 1, 10))
+colors = plt.cm.plasma(np.linspace(0.3, 1, 35))
 
 unique_names = measurements_daily["Naam"].unique()
 
@@ -340,28 +453,27 @@ for idx, naam in enumerate(unique_names):
             linewidth=1.5,
             marker="o",
         )
-        axes[idx].axhline(y=0, color="red", linestyle="--", linewidth=0.5)
+        axes[idx].axhline(y=0, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
 
-    axes[idx].set_xlabel("Month")
-    axes[idx].set_ylabel("Monthly Median Meetwaarde")
-    axes[idx].set_title(f"Monthly Median Meetwaarde by Month (1 year cycle) - {naam}")
+    axes[idx].set_xlabel("Maand")
+    axes[idx].set_ylabel("Waterhoogte [cm NAP]")
+    axes[idx].set_title(f"Jaarlijkse maandelijkse waterhoogte (1 jaar cyclus)\n{naam}")
     axes[idx].set_xticks(range(1, 13))
-    axes[idx].legend(title="Year", bbox_to_anchor=(1.05, 1), loc="upper left")
+    axes[idx].legend(title="Jaar", bbox_to_anchor=(1.05, 1), loc="upper left")
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\monthly_median_meetwaarde_by_month.png",
+    DATA_OUTPUT_DIR / "figuren" / "waterhoogte" / "timeseries_monthly_median_meetwaarde.png",
     dpi=300,
     bbox_inches="tight",
 )
 plt.show()
-
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
 
 sns.set_style("whitegrid")
-colors = plt.cm.Greys(np.linspace(0.3, 1, 10))
+colors = plt.cm.Greys(np.linspace(0.3, 1, 35))
 
 unique_names = measurements_daily["Naam"].unique()
 
@@ -426,16 +538,16 @@ for idx, naam in enumerate(unique_names):
             alpha=0.2,
         )
 
-    axes[idx].set_xlabel("Month")
-    axes[idx].set_ylabel("Monthly Median Meetwaarde")
-    axes[idx].set_title(f"Monthly Median Meetwaarde by Month (1 year cycle) - {naam}")
+    axes[idx].set_xlabel("Maand")
+    axes[idx].set_ylabel("Maandelijkse mediaan Meetwaarde")
+    axes[idx].set_title(f"Jaarlijkse maandelijkse waterhoogte (1 jaar cyclus)\n{naam}")
     axes[idx].set_xticks(range(1, 13))
-    axes[idx].legend(title="Year", bbox_to_anchor=(1.05, 1), loc="upper left")
+    axes[idx].legend(title="Jaar", bbox_to_anchor=(1.05, 1), loc="upper left")
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\monthly_median_meetwaarde_by_month_with_ci.png",
+    DATA_OUTPUT_DIR / "figuren" / "waterhoogte" / "monthly_median_meetwaarde_by_month_with_ci.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -524,14 +636,13 @@ add_basemap(
 )
 ax.set_xlabel("Longitude")
 ax.set_ylabel("Latitude")
-plt.title("Salinity Measurement Locations (OpenStreetMap)")
+plt.title("Waterhoogte Meetlocaties (OpenStreetMap)")
 plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\waterhoogte_locations_map.png",
+    DATA_OUTPUT_DIR / "figuren" / "waterhoogte" / "waterhoogte_locations_map.png",
     dpi=300,
     bbox_inches="tight",
 )
 plt.show()
-
 # %%
 # Plot interactive map with folium
 
@@ -596,7 +707,7 @@ legend_html = """
 """
 # Save interactive map
 m.save(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\waterhoogte\interactive_map_waterhoogte_locations.html"
+    DATA_OUTPUT_DIR / "figuren" / "waterhoogte" / "interactive_map_waterhoogte_locations.html"
 )
-print("Interactive map saved to: interactive_map_waterhoogte_locations.html")
+print("Interactive map saved to:", DATA_OUTPUT_DIR / "figuren" / "waterhoogte" / "interactive_map_waterhoogte_locations.html")
 # %%

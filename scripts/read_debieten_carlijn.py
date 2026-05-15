@@ -48,8 +48,8 @@ if dfs:
     print(result_df.head())
 
     # Optional: Save to CSV
-    result_df.to_csv("combined_neerslag.csv", index=False)
-    print("\nSaved to combined_neerslag.csv")
+    result_df.to_parquet("P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\debieten_carlijn_2018_2022.parquet", index=False)
+    print("\nSaved to debieten_carlijn_2018_2022.parquet")
 else:
     print("No files were loaded successfully")
 
@@ -138,7 +138,7 @@ if dfs:
         "Inlaat Vier Noorder Koggen (Westfriesland)",
     ]
 
-    result_df_filt["YearMonth"] = result_df_filt["DATUM"].dt.to_period("M")
+    result_df_filt["YearMonth"] = result_df_filt["DATUM"].dt.to_period("D") # M
 
     # Create a copy and categorize flows
     result_df_copy = result_df_filt.copy()
@@ -164,8 +164,8 @@ if dfs:
     # Make outflows negative
     pivot_outflow = -pivot_outflow
 
-    # Calculate netto flow (additions - subtractions)
-    netto_flow = pivot_inflow.sum(axis=1) + pivot_outflow.sum(axis=1)
+    # Calculate netto flow (additions - subtractions), smoothed with 14-period rolling average
+    netto_flow = (pivot_inflow.sum(axis=1) + pivot_outflow.sum(axis=1)).rolling(window=14, center=True, min_periods=1).mean()
 
     # Process Berging IJsselmeer data
     berging_ijsselmeer["YearMonth"] = berging_ijsselmeer["DATUM"].dt.to_period("M")
@@ -204,26 +204,25 @@ if dfs:
         ax=ax,
         marker=None,
         color="black",
-        linewidth=1.5,
+        linewidth=0.7,
         label="Netto Flow",
-        markersize=8,
         zorder=5,
     )
 
-    ax2 = ax.twinx()
-    berging_monthly.plot(
-        kind="line",
-        ax=ax2,
-        marker=None,
-        linestyle="--",
-        color="black",
-        linewidth=2,
-        label="Berging IJsselmeer",
-        markersize=6,
-        zorder=4,
-    )
-    ax2.set_ylabel("Berging IJsselmeer in miljoen m3", color="green")
-    ax2.tick_params(axis="y", labelcolor="green")
+    # ax2 = ax.twinx()
+    # berging_monthly.plot(
+    #     kind="line",
+    #     ax=ax2,
+    #     marker=None,
+    #     linestyle="--",
+    #     color="black",
+    #     linewidth=2,
+    #     label="Berging IJsselmeer",
+    #     markersize=6,
+    #     zorder=4,
+    # )
+    # ax2.set_ylabel("Berging IJsselmeer in miljoen m3", color="green")
+    # ax2.tick_params(axis="y", labelcolor="green")
 
     ax.axhline(y=0, color="gray", linestyle="--", linewidth=1)
     ax.set_ylabel("Q in miljoen m3")
@@ -232,7 +231,14 @@ if dfs:
     )
     ax.set_xlabel("Month")
     ax.legend(title="NAME", bbox_to_anchor=(1.1, 1), loc="upper left")
-    ax.grid(axis="both", linestyle="--", linewidth=0.5)
+    ax.grid(axis="y", linestyle="--", linewidth=0.5)
+    ax.set_ylim(-150, 150)
+
+    # Reduce x-axis tick density
+    tick_indices = np.linspace(0, len(ax.get_xticklabels()) - 1, min(12, len(ax.get_xticklabels())), dtype=int)
+    for i, label in enumerate(ax.get_xticklabels()):
+        label.set_visible(i in tick_indices)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
 
     plt.tight_layout()
     plt.show()

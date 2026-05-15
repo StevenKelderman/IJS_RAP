@@ -23,9 +23,11 @@ logging.getLogger("ddlpy").setLevel(logging.INFO)
 
 # %%
 
-ROOT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse")
+PROJECT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer")
 
-DATA_OUTPUT_DIR = ROOT_DIR / "data" / "4_output"
+DATA_OUTPUT_DIR = PROJECT_DIR / "analyse" / "data" / "4_output"
+
+TODAY = dt.datetime.now().strftime("%Y%m%d")
 # %%
 # Locations
 
@@ -164,56 +166,132 @@ unique_names
 
 
 def fetch_measurements(args):
-    idx, index, row = args
+    idx, row, start_date, end_date = args
     station_name = row["Naam"]
-    grootheid = row["Grootheid.Code"]
-    wat = row["Parameter_Wat_Omschrijving"]
+    grootheid_code = row["Grootheid.Code"]
+    parameter_wat_omschrijving = row["Parameter_Wat_Omschrijving"]
     print(
-        f"({idx + 1}/{len(selected)}) Getting measurements for {station_name} ({grootheid}): ({wat})"
+        f"({idx}) Getting measurements for {station_name} ({grootheid_code}): ({parameter_wat_omschrijving}) from {start_date} to {end_date}"
     )
-    print("  Start date: 2018-01-01, End date: 2026-03-31")
-    measurements = ddlpy.measurements(row, "2018-01-01", "2026-03-31")
+    measurements = ddlpy.measurements(row, start_date, end_date)
     print(
-        f"  Retrieved {len(measurements)} measurements for {station_name} ({grootheid})"
+        f"  Retrieved {len(measurements)} measurements for {station_name} ({grootheid_code})"
     )
     return measurements
 
 
-all_measurements = []
-print(f"Starting processing of {len(selected)} stations...")
-with ThreadPoolExecutor(max_workers=16) as executor:
-    futures = [
-        executor.submit(fetch_measurements, (idx, index, row))
-        for idx, (index, row) in enumerate(selected.iterrows())
-    ]
-    for future in as_completed(futures):
-        all_measurements.append(future.result())
-print(f"Completed processing of all {len(selected)} stations")
-
-# %%
-converted_measurements = [
-    pl.from_pandas(df, include_index=True) for df in all_measurements if not df.empty
+# Date ranges: yearly periods from 1990 to 2026
+date_ranges = [
+    (f"{year}-01-01", f"{year}-12-31")
+    for year in range(2000, 2027)
 ]
-if converted_measurements:
-    measurements = pl.concat(converted_measurements)
-else:
-    measurements = pl.DataFrame()
 
-measurements
+# Helper function to create progress tracking filename
+def get_location_progress_file(location_name):
+    return PROJECT_DIR / "analyse" / "data" / "1_raw" /"per_location_per_year" / "wind" / f".progress_{location_name.replace(' ', '_').replace(',', '_')}.json"
+
+# Helper function to load completed date ranges for a location
+def load_completed_ranges(location_name):
+    progress_file = get_location_progress_file(location_name)
+    if progress_file.exists():
+        import json
+        with open(progress_file, 'r') as f:
+            return json.load(f)
+    return []
+
+# Helper function to save completed date ranges for a location
+def save_completed_ranges(location_name, completed_ranges):
+    progress_file = get_location_progress_file(location_name)
+    import json
+    with open(progress_file, 'w') as f:
+        json.dump(completed_ranges, f)
+
+print(f"Starting robust processing of {len(selected)} stations across {len(date_ranges)} date ranges...")
+
+# Group by location first - this is the primary grouping
+grouped_by_location = selected.groupby("Naam")
+
+for location_name, location_group in grouped_by_location:
+    print(f"\n{'='*80}")
+    print(f"Processing Location: {location_name}")
+    print(f"  Total parameters: {len(location_group)}")
+    print(f"{'='*80}")
+    
+    # Load already completed date ranges for this location
+    completed_ranges = load_completed_ranges(location_name)
+    print(f"  Already completed date ranges: {completed_ranges}")
+    
+    for date_idx, (start_date, end_date) in enumerate(date_ranges):
+        date_range_key = f"{start_date}_to_{end_date}"
+        
+        # Skip if already completed
+        if date_range_key in completed_ranges:
+            print(f"\n  [{date_idx + 1}/{len(date_ranges)}] Skipping date range {start_date} to {end_date} (already completed)")
+            continue
+        
+        print(f"\n  [{date_idx + 1}/{len(date_ranges)}] Processing date range {start_date} to {end_date}")
+        
+        # Create output file for this location+daterange combination
+        location_file = PROJECT_DIR / "analyse" / "data" / "1_raw" /"per_location_per_year" / "wind" / f"measurements_RWS_ijsselmeer_wind_{location_name.replace(' ', '_').replace(',', '')}_{date_range_key[0:4]}_{TODAY}.parquet"
+        
+        if location_file.exists():
+            print(f"    File already exists, skipping: {location_file.name}")
+            completed_ranges.append(date_range_key)
+            save_completed_ranges(location_name, completed_ranges)
+            continue
+        
+        # Process all parameters for this location + date range with threading
+        n_params = len(location_group)
+        measurements_list = []
+        
+        with ThreadPoolExecutor(max_workers=24) as executor:
+            futures = {
+                executor.submit(fetch_measurements, (idx, row, start_date, end_date)): idx
+                for idx, (_, row) in enumerate(location_group.iterrows())
+            }
+            
+            completed = 0
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result is not None and not result.empty:
+                        measurements_list.append(result)
+                    completed += 1
+                    print(f"    Progress: {completed}/{n_params} parameters fetched")
+                except Exception as e:
+                    print(f"    Error fetching measurement: {e}")
+                    completed += 1
+        
+        # Convert and save results for this location + date range
+        if measurements_list:
+            converted = [
+                pl.from_pandas(df, include_index=True) for df in measurements_list if not df.empty
+            ]
+            if converted:
+                combined = pl.concat(converted, how="diagonal_relaxed")
+                combined.write_parquet(location_file)
+                print(f"    Saved {len(measurements_list)} parameters to {location_file.name}")
+        
+        # Mark this date range as completed for this location
+        completed_ranges.append(date_range_key)
+        save_completed_ranges(location_name, completed_ranges)
+        print(f"    Progress saved for {location_name}")
+
+print(f"\n{'='*80}")
+print(f"Completed processing of all {len(grouped_by_location)} locations across all date ranges")
+print(f"{'='*80}")
+
 # %%
-# EXPORT TO PARQUET
-
-TODAY = dt.datetime.now().strftime("%Y%m%d")
-
-measurements.write_parquet(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\1_raw\measurements_RWS_wind_snelheid_2018_2026_{TODAY}.parquet"
-)
+# READ WADAR
+measurements = pl.scan_parquet(PROJECT_DIR / "analyse" / "data" / "1_raw" / "per_location_per_year" / "wind" / "*.parquet", missing_columns="insert").filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50).collect()
+measurements
 # %%
 # Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
 
 group_cols = [
     "Naam",
     "Grootheid.Code",
+    "Parameter_Wat_Omschrijving",
     "Eenheid.Code",
     "WaardeBewerkingsMethode.Omschrijving",
 ]
@@ -229,7 +307,42 @@ measurements_daily = (
     )
     .sort(group_cols + ["time"])
 )
+measurements_daily
+# %%
+# Create overview for each Naam: time range and measurement count per year
+overview = (
+    measurements_daily
+    .with_columns(
+        pl.col("time").cast(pl.Date).dt.year().alias("year")
+    )
+    .group_by(["Naam", "year","Grootheid.Code","Eenheid.Code"])
+    .agg(pl.len().alias("count"))
+    .pivot(index=["Naam", "Grootheid.Code","Eenheid.Code"], on="year", values="count", aggregate_function="sum")
+    .with_columns(
+        pl.col("Naam").alias("Station")
+    )
+)
 
+# Add time range per Naam
+time_range = (
+    measurements_daily
+    .group_by("Naam", "Grootheid.Code","Eenheid.Code")
+    .agg(
+        pl.col("time").min().alias("start_time"),
+        pl.col("time").max().alias("end_time"),
+        pl.len().alias("total_measurements")
+    )
+)
+
+overview_with_range = time_range.join(overview, on=["Naam", "Grootheid.Code","Eenheid.Code"], how="left")
+# Sort year columns numerically
+year_cols = sorted([col for col in overview_with_range.columns if col not in ["Naam", "Grootheid.Code","Eenheid.Code", "start_time", "end_time", "total_measurements", "Station"]], key=int)
+overview_with_range = overview_with_range.select(["Naam", "Grootheid.Code","Eenheid.Code", "start_time", "end_time", "total_measurements"] + year_cols + (["Station"] if "Station" in overview_with_range.columns else [])).sort(["Naam", "Grootheid.Code","Eenheid.Code"])
+
+overview_with_range.write_excel(
+    DATA_OUTPUT_DIR / "overzicht_wind_per_station_parameter.xlsx",
+)
+# %%
 output_dir = Path(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\2_external\measurements_RWS_wind_per_combo"
 )
@@ -321,7 +434,145 @@ plt.savefig(
 plt.show()
 
 # %%
-measurements
+# Histogram of wind direction over all locations and years
+wind_direction_all = measurements_daily.filter(
+    pl.col("Grootheid.Code") == "WINDRTG"
+).select(["Meetwaarde.Waarde_Numeriek"]).to_pandas()
+
+fig, ax = plt.subplots(figsize=(12, 6))
+ax.hist(
+    wind_direction_all["Meetwaarde.Waarde_Numeriek"],
+    bins=36,  # 36 bins for 10-degree intervals
+    edgecolor="black",
+    alpha=0.7,
+    color="steelblue"
+)
+ax.set_xlabel("Wind Direction (°)", fontsize=12)
+ax.set_ylabel("Frequency", fontsize=12)
+ax.set_title("Wind Direction Distribution - All Locations and Years", fontsize=14)
+ax.set_xlim(0, 360)
+ax.grid(True, alpha=0.3, axis="y")
+
+plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\wind\wind_direction_histogram.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.show()
+
+# %%
+measurements_daily
+# %%
+# Wind speed plot with wind direction coloring (0-360 continuous)
+
+measurements_daily_stavoren = measurements_daily.filter(pl.col("Naam") == "Stavoren IJsselmeer").sort("time")
+# measurements_daily_stavoren = measurements_daily_stavoren.filter(pl.col("time").is_between(dt.datetime(2018, 1, 1), dt.datetime(2018, 12, 31)))
+measurements_daily_stavoren
+# %%
+
+# Get wind direction and speed data
+wind_direction = measurements_daily_stavoren.filter(
+    pl.col("Grootheid.Code") == "WINDRTG"
+).select(["Naam", "time", "Meetwaarde.Waarde_Numeriek"]).rename(
+    {"Meetwaarde.Waarde_Numeriek": "wind_direction"}
+)
+
+wind_speed = measurements_daily_stavoren.filter(
+    pl.col("Grootheid.Code") == "WINDSHD"
+).select(["Naam", "time", "Meetwaarde.Waarde_Numeriek"]).rename(
+    {"Meetwaarde.Waarde_Numeriek": "wind_speed"}
+)
+
+# Join wind direction and speed data
+wind_combined = wind_speed.join(wind_direction, on=["Naam", "time"], how="inner")
+
+# Get unique station names
+unique_stations = wind_combined.select("Naam").unique().sort("Naam")["Naam"].to_list()
+
+# Define compass bins and labels
+compass_directions = {
+    "N": (337.5, 22.5),
+    "NE": (22.5, 67.5),
+    "E": (67.5, 112.5),
+    "SE": (112.5, 157.5),
+    "S": (157.5, 202.5),
+    "SW": (202.5, 247.5),
+    "W": (247.5, 292.5),
+    "NW": (292.5, 337.5),
+}
+
+def get_wind_direction_bin(angle):
+    """Bin wind direction angle into compass direction"""
+    for direction, (min_angle, max_angle) in compass_directions.items():
+        if min_angle <= max_angle:
+            if min_angle <= angle < max_angle:
+                return direction
+        else:  # Handle wrap-around for North
+            if angle >= min_angle or angle < max_angle:
+                return direction
+    return "N"
+
+# Create subplots for each station
+fig, axes = plt.subplots(len(unique_stations), 1, figsize=(14, 4 * len(unique_stations)))
+if len(unique_stations) == 1:
+    axes = [axes]
+
+# Create color map for 8 compass directions with rainbow colors
+colors = plt.cm.rainbow(np.linspace(0, 1, 8))
+direction_colors = {direction: colors[i] for i, direction in enumerate(compass_directions.keys())}
+
+for idx, station in enumerate(unique_stations):
+    station_data = wind_combined.filter(pl.col("Naam") == station).sort("time").to_pandas()
+    
+    # Bin wind directions
+    station_data["wind_direction_bin"] = station_data["wind_direction"].apply(get_wind_direction_bin)
+    
+    # Map direction bins to numeric values for coloring
+    direction_to_num = {direction: i for i, direction in enumerate(compass_directions.keys())}
+    station_data["wind_direction_num"] = station_data["wind_direction_bin"].map(direction_to_num)
+    
+    ax = axes[idx]
+    ax.plot(
+        station_data["time"],
+        station_data["wind_speed"],
+        color="grey",
+        linewidth=0.5,
+        alpha=0.8,
+        zorder=1
+    )
+    scatter = ax.scatter(
+        station_data["time"],
+        station_data["wind_speed"],
+        c=station_data["wind_direction_num"],
+        cmap="rainbow",
+        vmin=0,
+        vmax=7,
+        s=20,
+        alpha=0.95,
+        edgecolors="none",
+        zorder=2
+
+    )
+    ax.set_xlabel("")
+    ax.set_ylabel("Wind snelheid [m/s]", fontsize=12)
+    ax.set_ylim(0, station_data["wind_speed"].max() * 1.2)
+    # ax.set_xlim(dt.datetime(2018, 1, 1, 0, 0, 0), dt.datetime(2018, 1, 1, 23, 59, 59))
+    ax.set_title(f"Wind Speed with Direction Coloring - {station}")
+    ax.grid(True, alpha=0.3)
+    
+    cbar = plt.colorbar(scatter, ax=ax, ticks=range(8))
+    cbar.set_ticklabels(list(compass_directions.keys()))
+    cbar.set_label("Wind Direction", rotation=270, labelpad=20)
+
+plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\wind\wind_speed_with_direction_coloring.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.show()
+
 # %%
 # Wind rose plot with locations on map
 
