@@ -93,16 +93,16 @@ bool_stations = locations.index.isin(
     [
         "denoever.waddenzee.voorhaven",
         "kornwerderzand.waddenzee.buitenhaven",
-        "dronten.roggebotsluis.spuikoker",
-        "dronten.roggebotsluis.vossemeer",
-        "genemuiden",
-        "krabbersgat.ijsselmeer",
-        "lelystad.houtribsluis.noord",
-        "lemmer.stroomkanaal.teroelsterkolk",
-        "lemmer.woudagemaal.stroomkanaal",
-        "stavoren.gemaalhoogland.buiten",
-        "stavoren.johanfrisokanaal",
-        "olst",
+        # "dronten.roggebotsluis.spuikoker",
+        # "dronten.roggebotsluis.vossemeer",
+        # "genemuiden",
+        # "krabbersgat.ijsselmeer",
+        # "lelystad.houtribsluis.noord",
+        # "lemmer.stroomkanaal.teroelsterkolk",
+        # "lemmer.woudagemaal.stroomkanaal",
+        # "stavoren.gemaalhoogland.buiten",
+        # "stavoren.johanfrisokanaal",
+        # "olst",
     ]
 )
 bool_grootheid = locations["Grootheid.Code"].isin(["Q"])

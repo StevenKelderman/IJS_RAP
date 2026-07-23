@@ -535,6 +535,10 @@ ctx.add_basemap(
 ax.set_title("Debiet Locations")
 
 plt.tight_layout()
+plt.savefig(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\figures\debiet_locations_map_20260720.png",
+    dpi=300,
+)
 plt.show()
 # %%
 import contextily as ctx
@@ -708,4 +712,265 @@ for loc in locaties_3857.itertuples():
 
 # plt.tight_layout()
 plt.show()
+
+# %%
+dfs[0]
+# %%
+import numpy as np
+import plotly.graph_objects as go
+
+# Create daily interactive plot for inflows and outflows with netto flow
+if dfs:
+    # Define NAMEs that are leaving (outflows)
+    outflows = [
+        "Verdamping",
+        "Stevin spuisluizen (afsluitdijk)",
+        "Lorentz spuisluizen (Afsluitdijk)",
+        "lek Spuisluizen (Afsluitdijk)",
+        "PWN & WRK III",
+        "inlaat Tacozijl (Friesland)",
+        "inlaat Teroelsterkolk (Friesland)",
+        "inlaat Hooglandgemaal (140)",
+        "inlaat Workum",
+        "Roggebotsluis",
+        "inlaten Noordoostpolder (som)",
+        "Krabbersgat spuisluizen (Houtribdijk) afvoer",
+        "Houtrib spuisluizen (Houtribdijk) afvoer",
+        "Zwarte Water afvoer",
+        "Inlaat Vier Noorder Koggen (Westfriesland)",
+    ]
+
+    result_df_filt["Year"] = result_df_filt["DATUM"].dt.year
+    result_df_filt["Date"] = result_df_filt["DATUM"].dt.date
+
+    # Create a copy and categorize flows
+    result_df_copy = result_df_filt.copy()
+
+    # Define IJssel inflow and Stevin/Lorentz outflows specifically
+    ijssel_inflow = ["IJssel"]
+    stevin_outflows = ["Stevin spuisluizen (afsluitdijk)"]
+    lorentz_outflows = ["Lorentz spuisluizen (Afsluitdijk)"]
+
+    def categorize_flow(name):
+        if name in ijssel_inflow:
+            return "IJssel"
+        elif name in stevin_outflows:
+            return "Stevinsluizen"
+        elif name in lorentz_outflows:
+            return "Lorentzsluizen"
+        elif name in outflows:
+            return "Overig uit"
+        else:
+            return "Overig in"
+
+    result_df_copy["FlowType"] = result_df_copy["NAME"].apply(categorize_flow)
+
+    # Group by year, date and NAME, summing WAARDE
+    daily_flows = (
+        result_df_copy.groupby(["Year", "DATUM", "NAME", "FlowType"])["WAARDE"]
+        .sum()
+        .reset_index()
+    )
+
+    # Get unique years for dropdown
+    years = sorted(daily_flows["Year"].unique())
+
+    # Define colors
+    colors = {
+        "IJssel": "darkblue",
+        "Overig in": "lightblue",
+        "Stevinsluizen": "darkred",
+        "Lorentzsluizen": "red",
+        "Overig uit": "lightsalmon",
+    }
+
+    # Create buttons for year dropdown
+    buttons = []
+    for year in years:
+        year_data = daily_flows[daily_flows["Year"] == year].sort_values("DATUM")
+
+        # Get date values for x-axis
+        dates = sorted(year_data["DATUM"].unique())
+
+        # Create pivot tables for each category
+        pivot_ijssel = (
+            year_data[year_data["FlowType"] == "IJssel"]
+            .groupby("DATUM")["WAARDE"]
+            .sum()
+        )
+        pivot_other_inflow = (
+            year_data[year_data["FlowType"] == "Overig in"]
+            .groupby("DATUM")["WAARDE"]
+            .sum()
+        )
+        pivot_stevin = (
+            -year_data[year_data["FlowType"] == "Stevinsluizen"]
+            .groupby("DATUM")["WAARDE"]
+            .sum()
+        )
+        pivot_lorentz = (
+            -year_data[year_data["FlowType"] == "Lorentzsluizen"]
+            .groupby("DATUM")["WAARDE"]
+            .sum()
+        )
+        pivot_other_outflow = (
+            -year_data[year_data["FlowType"] == "Overig uit"]
+            .groupby("DATUM")["WAARDE"]
+            .sum()
+        )
+
+        # Calculate netto flow
+        netto_flow = (
+            pivot_ijssel
+            + pivot_other_inflow
+            + pivot_stevin
+            + pivot_lorentz
+            + pivot_other_outflow
+        )
+
+        buttons.append(
+            dict(
+                label=str(year),
+                method="update",
+                args=[
+                    {
+                        "x": [dates] * 6,
+                        "y": [
+                            [pivot_ijssel.get(d, 0) for d in dates],
+                            [pivot_other_inflow.get(d, 0) for d in dates],
+                            [pivot_stevin.get(d, 0) for d in dates],
+                            [pivot_lorentz.get(d, 0) for d in dates],
+                            [pivot_other_outflow.get(d, 0) for d in dates],
+                            [netto_flow.get(d, 0) for d in dates],
+                        ],
+                    },
+                    {"title": f"Daily Inflows and Outflows - {year}"},
+                ],
+            )
+        )
+
+    # Create fresh figure with first year's data
+    first_year = years[0]
+    first_year_data = daily_flows[daily_flows["Year"] == first_year].sort_values(
+        "DATUM"
+    )
+
+    dates = sorted(first_year_data["DATUM"].unique())
+
+    pivot_ijssel = (
+        first_year_data[first_year_data["FlowType"] == "IJssel"]
+        .groupby("DATUM")["WAARDE"]
+        .sum()
+    )
+    pivot_other_inflow = (
+        first_year_data[first_year_data["FlowType"] == "Overig in"]
+        .groupby("DATUM")["WAARDE"]
+        .sum()
+    )
+    pivot_stevin = (
+        -first_year_data[first_year_data["FlowType"] == "Stevinsluizen"]
+        .groupby("DATUM")["WAARDE"]
+        .sum()
+    )
+    pivot_lorentz = (
+        -first_year_data[first_year_data["FlowType"] == "Lorentzsluizen"]
+        .groupby("DATUM")["WAARDE"]
+        .sum()
+    )
+    pivot_other_outflow = (
+        -first_year_data[first_year_data["FlowType"] == "Overig uit"]
+        .groupby("DATUM")["WAARDE"]
+        .sum()
+    )
+
+    netto_flow = (
+        pivot_ijssel
+        + pivot_other_inflow
+        + pivot_stevin
+        + pivot_lorentz
+        + pivot_other_outflow
+    )
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=[pivot_ijssel.get(d, 0) for d in dates],
+            name="IJssel",
+            marker=dict(color=colors["IJssel"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=[pivot_other_inflow.get(d, 0) for d in dates],
+            name="Overig in",
+            marker=dict(color=colors["Overig in"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=[pivot_stevin.get(d, 0) for d in dates],
+            name="Stevinsluizen",
+            marker=dict(color=colors["Stevinsluizen"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=[pivot_lorentz.get(d, 0) for d in dates],
+            name="Lorentzsluizen",
+            marker=dict(color=colors["Lorentzsluizen"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=[pivot_other_outflow.get(d, 0) for d in dates],
+            name="Overig uit",
+            marker=dict(color=colors["Overig uit"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=[netto_flow.get(d, 0) for d in dates],
+            name="Netto Flow",
+            mode="lines",
+            line=dict(color="black", width=1.5),
+            yaxis="y",
+        )
+    )
+
+    fig.update_layout(
+        barmode="relative",
+        title=f"Daily Inflows and Outflows - {first_year}",
+        # xaxis_title="Date",
+        yaxis_title="Q in miljoen m3",
+        hovermode="x unified",
+        updatemenus=[
+            dict(
+                buttons=buttons,
+                direction="down",
+                pad={"r": 10, "t": 10},
+                showactive=True,
+                x=0.01,
+                xanchor="left",
+                y=1.12,
+                yanchor="top",
+            )
+        ],
+        height=600,
+        width=1200,
+    )
+
+    fig.write_html("interactive_flows.html")
+    fig.show()
 # %%
