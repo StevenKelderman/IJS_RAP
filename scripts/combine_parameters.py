@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 import polars as pl
-from matplotlib.lines import Line2D
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from plotly.subplots import make_subplots
 
 # %%
@@ -36,7 +34,7 @@ measurements_debiet_carlijn_daily = measurements_debiet_carlijn_daily.rename(
 
 measurements_debiet_carlijn_daily
 # %%
-# READ WADAR
+# READ WADAR DEBIET
 group_cols = [
     "Code",
     "Naam",
@@ -73,7 +71,7 @@ measurements_debiet_daily = (
 )
 measurements_debiet_daily
 # %%
-# READ WADAR
+# READ WADAR SALINITEIT
 hoogte_col = "WaarnemingMetadata.Bemonsteringshoogte"
 
 group_cols = ["Naam", "Grootheid.Code", "Eenheid.Code", hoogte_col]
@@ -122,6 +120,7 @@ measurements_saliniteit_daily = (
 
 measurements_saliniteit_daily
 # %%
+# READ WADAR WIND
 
 group_cols = [
     "Naam",
@@ -164,7 +163,7 @@ measurements_wind_daily = measurements_wind_daily.with_columns(
 
 measurements_wind_daily
 # %%
-# READ WADAR
+# READ WADAR WATERHOOGTE
 # Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
 
 group_cols = [
@@ -207,140 +206,6 @@ measurements_waterhoogte_daily
 # measurements_waterhoogte_daily # cm
 # measurements_wind_daily # m/s
 # %%
-
-# Create monthly stacked barplot for inflows and outflows with netto flow
-if dfs:
-    # Define NAMEs that are leaving (outflows)
-    outflows = [
-        "Verdamping",
-        "Stevin spuisluizen (afsluitdijk)",
-        "Lorentz spuisluizen (Afsluitdijk)",
-        "lek Spuisluizen (Afsluitdijk)",
-        "PWN & WRK III",
-        "inlaat Tacozijl (Friesland)",
-        "inlaat Teroelsterkolk (Friesland)",
-        "inlaat Hooglandgemaal (140)",
-        "inlaat Workum",
-        "Roggebotsluis",
-        "inlaten Noordoostpolder (som)",
-        "Krabbersgat spuisluizen (Houtribdijk) afvoer",
-        "Houtrib spuisluizen (Houtribdijk) afvoer",
-        "Zwarte Water afvoer",
-        "Inlaat Vier Noorder Koggen (Westfriesland)",
-    ]
-
-    result_df_filt["YearMonth"] = result_df_filt["DATUM"].dt.to_period("D")  # M
-
-    # Create a copy and categorize flows
-    result_df_copy = result_df_filt.copy()
-    result_df_copy["FlowType"] = result_df_copy["NAME"].apply(
-        lambda x: "Outflow" if x in outflows else "Inflow"
-    )
-
-    # Group by month and NAME, summing WAARDE
-    monthly_flows = (
-        result_df_copy.groupby(["YearMonth", "NAME", "FlowType"])["WAARDE"]
-        .sum()
-        .reset_index()
-    )
-
-    # Create pivot table for stacked bar plot
-    pivot_inflow = monthly_flows[monthly_flows["FlowType"] == "Inflow"].pivot_table(
-        index="YearMonth", columns="NAME", values="WAARDE", aggfunc="sum", fill_value=0
-    )
-    pivot_outflow = monthly_flows[monthly_flows["FlowType"] == "Outflow"].pivot_table(
-        index="YearMonth", columns="NAME", values="WAARDE", aggfunc="sum", fill_value=0
-    )
-
-    # Make outflows negative
-    pivot_outflow = -pivot_outflow
-
-    # Calculate netto flow (additions - subtractions), smoothed with 14-period rolling average
-    netto_flow = (
-        (pivot_inflow.sum(axis=1) + pivot_outflow.sum(axis=1))
-        .rolling(window=14, center=True, min_periods=1)
-        .mean()
-    )
-
-    # Process Berging IJsselmeer data
-    berging_ijsselmeer["YearMonth"] = berging_ijsselmeer["DATUM"].dt.to_period("M")
-    berging_monthly = berging_ijsselmeer.groupby("YearMonth")["WAARDE"].sum()
-
-    # Plot stacked bar chart with inflows and negative outflows
-    fig, ax = plt.subplots(figsize=(14, 10))
-
-    # Generate distinct colors for each NAME in blue/orange tints
-    all_names = list(pivot_inflow.columns) + list(pivot_outflow.columns)
-    blue_shades = plt.cm.Blues(np.linspace(0.4, 0.9, len(pivot_inflow.columns)))
-    orange_shades = plt.cm.Oranges(np.linspace(0.4, 0.9, len(pivot_outflow.columns)))
-    color_map = {name: color for name, color in zip(pivot_inflow.columns, blue_shades)}
-    color_map.update(
-        {name: color for name, color in zip(pivot_outflow.columns, orange_shades)}
-    )
-
-    pivot_inflow.plot(
-        kind="bar",
-        stacked=True,
-        ax=ax,
-        color=[color_map[col] for col in pivot_inflow.columns],
-        alpha=0.8,
-        label="Inflows",
-    )
-    pivot_outflow.plot(
-        kind="bar",
-        stacked=True,
-        ax=ax,
-        color=[color_map[col] for col in pivot_outflow.columns],
-        alpha=0.8,
-        label="Outflows",
-    )
-    netto_flow.plot(
-        kind="line",
-        ax=ax,
-        marker=None,
-        color="black",
-        linewidth=0.7,
-        label="Netto Flow",
-        zorder=5,
-    )
-
-    # ax2 = ax.twinx()
-    # berging_monthly.plot(
-    #     kind="line",
-    #     ax=ax2,
-    #     marker=None,
-    #     linestyle="--",
-    #     color="black",
-    #     linewidth=2,
-    #     label="Berging IJsselmeer",
-    #     markersize=6,
-    #     zorder=4,
-    # )
-    # ax2.set_ylabel("Berging IJsselmeer in miljoen m3", color="green")
-    # ax2.tick_params(axis="y", labelcolor="green")
-
-    ax.axhline(y=0, color="gray", linestyle="--", linewidth=1)
-    ax.set_ylabel("Q in miljoen m3")
-    ax.set_title(
-        "Monthly Inflows (Additions) and Outflows (Subtractions) with Netto Flow and Berging IJsselmeer"
-    )
-    ax.set_xlabel("Month")
-    ax.legend(title="NAME", bbox_to_anchor=(1.1, 1), loc="upper left")
-    ax.grid(axis="y", linestyle="--", linewidth=0.5)
-    ax.set_ylim(-150, 150)
-
-    # Reduce x-axis tick density
-    tick_indices = np.linspace(
-        0, len(ax.get_xticklabels()) - 1, min(12, len(ax.get_xticklabels())), dtype=int
-    )
-    for i, label in enumerate(ax.get_xticklabels()):
-        label.set_visible(i in tick_indices)
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-
-    plt.tight_layout()
-    plt.show()
-
-# %%
 # Plot three parameters (debiet, wind, saliniteit) for 1 location and multiple years
 
 # Select locations and years
@@ -356,7 +221,6 @@ LOCATION_WIND = "Stavoren IJsselmeer"
 # LOCATION_SALINITEIT = "Den Oever Stevinsluizen zuid" # "Kornwerderzand Spuihaven zuid"; "Den Oever Stevinsluizen zuid"
 # LOCATION_WATERHOOGTE = "Den Oever, IJsselmeer binnenhaven"
 
-LOCATION_WIND = "Stavoren IJsselmeer"
 YEARS = [2018, 2019, 2020, 2021, 2022]
 
 # Define compass bins and labels (used for wind plots)
@@ -385,206 +249,6 @@ def get_wind_direction_bin(angle):
 
 
 # %%
-for YEAR in YEARS:
-    # Filter data for selected station and year
-    debiet_data = (
-        measurements_debiet_daily.filter(
-            (pl.col("Naam") == LOCATION_DEBIET) & (pl.col("time").dt.year() == YEAR)
-        )
-        .sort("time")
-        .to_pandas()
-    )
-
-    debiet_carlijn_data = (
-        measurements_debiet_carlijn_daily.filter(
-            (pl.col("Naam") == LOCATION_DEBIET_CARLIJN)
-            & (pl.col("time").dt.year() == YEAR)
-        )
-        .sort("time")
-        .to_pandas()
-    )
-
-    wind_data = measurements_wind_daily.filter(
-        (pl.col("Naam") == LOCATION_WIND) & (pl.col("time").dt.year() == YEAR)
-    ).sort("time")
-
-    waterhoogte_data = measurements_waterhoogte_daily.filter(
-        (pl.col("Naam") == LOCATION_WATERHOOGTE) & (pl.col("time").dt.year() == YEAR)
-    ).sort("time")
-
-    saliniteit_data = (
-        measurements_saliniteit_daily.filter(
-            (pl.col("Naam") == LOCATION_SALINITEIT) & (pl.col("time").dt.year() == YEAR)
-        )
-        .sort("time")
-        .to_pandas()
-    )
-
-    # Create figure with 5 subplots
-    fig, axes = plt.subplots(5, 1, figsize=(16, 10), sharex=True)
-
-    # Plot 1: Debiet
-    if len(debiet_data) > 0:
-        axes[0].plot(
-            debiet_data["time"],
-            debiet_data["Meetwaarde.Waarde_Numeriek"],
-            color="blue",
-            linewidth=1,
-        )
-        axes[0].set_ylabel("Debiet [m³/s]", fontsize=12)
-        axes[0].set_title(f"Debiet - {LOCATION_DEBIET} ({YEAR})", fontsize=12)
-        axes[0].grid(True, alpha=0.3)
-        axes[0].set_ylim(0, None)
-
-    if len(debiet_carlijn_data) > 0:
-        axes[1].plot(
-            debiet_carlijn_data["time"],
-            debiet_carlijn_data["Meetwaarde.Waarde_Numeriek"],
-            color="blue",
-            linewidth=1,
-        )
-        axes[1].set_ylabel("Debiet [m³/s]", fontsize=12)
-        axes[1].set_title(f"Debiet - {LOCATION_DEBIET_CARLIJN} ({YEAR})", fontsize=12)
-        axes[1].grid(True, alpha=0.3)
-        axes[1].set_ylim(0, None)
-
-    # Plot 2: Wind
-    # Get wind direction and speed data
-    wind_direction = (
-        wind_data.filter(pl.col("Grootheid.Code") == "WINDRTG")
-        .select(["Naam", "time", "Meetwaarde.Waarde_Numeriek"])
-        .rename({"Meetwaarde.Waarde_Numeriek": "wind_direction"})
-    )
-
-    wind_speed = (
-        wind_data.filter(pl.col("Grootheid.Code") == "WINDSHD")
-        .select(["Naam", "time", "Meetwaarde.Waarde_Numeriek"])
-        .rename({"Meetwaarde.Waarde_Numeriek": "wind_speed"})
-    )
-
-    # Join wind direction and speed data
-    wind_combined = wind_speed.join(wind_direction, on=["Naam", "time"], how="inner")
-
-    cbar = None
-    if len(wind_combined) > 0:
-        wind_combined_pandas = wind_combined.sort("time").to_pandas()
-
-        # Bin wind directions
-        wind_combined_pandas["wind_direction_bin"] = wind_combined_pandas[
-            "wind_direction"
-        ].apply(get_wind_direction_bin)
-
-        # Map direction bins to numeric values for coloring
-        direction_to_num = {
-            direction: i for i, direction in enumerate(compass_directions.keys())
-        }
-        wind_combined_pandas["wind_direction_num"] = wind_combined_pandas[
-            "wind_direction_bin"
-        ].map(direction_to_num)
-
-        # Create color map for 8 compass directions with rainbow colors
-        cmap = plt.cm.get_cmap("hsv", 8)
-
-        axes[2].plot(
-            wind_combined_pandas["time"],
-            wind_combined_pandas["wind_speed"],
-            color="grey",
-            linewidth=0.5,
-            alpha=0.8,
-            zorder=1,
-        )
-        scatter = axes[2].scatter(
-            wind_combined_pandas["time"],
-            wind_combined_pandas["wind_speed"],
-            c=wind_combined_pandas["wind_direction_num"],
-            cmap=cmap,
-            vmin=0,
-            vmax=7,
-            s=20,
-            alpha=0.95,
-            edgecolors="none",
-            zorder=2,
-        )
-        axes[2].set_ylabel("Wind snelheid [m/s]", fontsize=12)
-        axes[2].set_ylim(0, wind_combined_pandas["wind_speed"].max() * 1.2)
-        axes[2].set_title(
-            f"Wind Speed with Direction Coloring - {LOCATION_WIND} ({YEAR})",
-            fontsize=12,
-        )
-        axes[2].grid(True, alpha=0.3)
-
-        cax = inset_axes(
-            axes[2],
-            width="2%",
-            height="80%",
-            loc="center right",
-            bbox_to_anchor=(0.01, 0, 1, 1),
-            bbox_transform=axes[2].transAxes,
-            borderpad=0,
-        )
-        cbar = plt.colorbar(scatter, cax=cax, ticks=range(8))
-        cbar.set_ticklabels(list(compass_directions.keys()))
-        cbar.set_label("Wind Direction", rotation=270, labelpad=20)
-
-    # Plot 3: Waterhoogte
-    if len(waterhoogte_data) > 0:
-        axes[3].plot(
-            waterhoogte_data["time"],
-            waterhoogte_data["Meetwaarde.Waarde_Numeriek"],
-            color="blue",
-            linewidth=1,
-        )
-        axes[3].axhline(y=0, color="gray", linestyle="--", linewidth=1)
-        axes[3].set_ylabel("Waterhoogte [cm NAP]", fontsize=12)
-        axes[3].set_title(f"Waterhoogte - {LOCATION_WATERHOOGTE} ({YEAR})", fontsize=12)
-        axes[3].grid(True, alpha=0.3)
-
-    # Plot 4: Saliniteit
-    if len(saliniteit_data) > 0:
-        unique_heights = sorted(
-            saliniteit_data["WaarnemingMetadata.Bemonsteringshoogte"].unique()
-        )
-        cmap = plt.cm.get_cmap("tab10", len(unique_heights))
-        color_map = {height: cmap(i) for i, height in enumerate(unique_heights)}
-        colors = [
-            color_map[height]
-            for height in saliniteit_data["WaarnemingMetadata.Bemonsteringshoogte"]
-        ]
-        scatter = axes[4].scatter(
-            saliniteit_data["time"],
-            saliniteit_data["Meetwaarde.Waarde_Numeriek"],
-            c=colors,
-            s=20,
-            linewidth=0,
-        )
-        axes[4].set_ylabel("Saliniteit [mg/l]", fontsize=12)
-        axes[4].set_xlabel("Tijd", fontsize=12)
-        axes[4].set_title(f"Saliniteit - {LOCATION_SALINITEIT} ({YEAR})", fontsize=12)
-        axes[4].grid(True, alpha=0.3)
-
-        # Add legend with height categories
-        legend_elements = [
-            Line2D(
-                [0],
-                [0],
-                marker="o",
-                color="w",
-                markerfacecolor=color_map[height],
-                markersize=8,
-                label=f"{height} m",
-            )
-            for height in unique_heights
-        ]
-        axes[4].legend(handles=legend_elements, loc="upper left", fontsize=10)
-
-    plt.tight_layout()
-    plt.savefig(
-        DATA_OUTPUT_DIR / "figuren" / f"combined_parameters_{YEAR}.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
-    plt.show()
-# %%
 # Wind speed plot with wind direction coloring (0-360 continuous)
 
 measurements_wind_daily_stavoren_with_msl = measurements_wind_daily.filter(
@@ -610,29 +274,6 @@ measurements_wind_daily_stavoren = (
 
 measurements_wind_daily_stavoren
 # %%
-measurements_wind_daily_rotterdamsehoek_with_msl = measurements_wind_daily.filter(
-    (pl.col("Naam") == "Rotterdamsehoek IJsselmeer")
-    & (pl.col("Parameter_Wat_Omschrijving").str.contains("Mean Sea Level"))
-).sort("time")
-
-measurements_wind_daily_rotterdamsehoek_without_msl = measurements_wind_daily.filter(
-    (pl.col("Naam") == "Rotterdamsehoek IJsselmeer")
-    & ~(pl.col("Parameter_Wat_Omschrijving").str.contains("Mean Sea Level"))
-).sort("time")
-
-measurements_wind_daily_rotterdamsehoek = (
-    pl.concat(
-        [
-            measurements_wind_daily_rotterdamsehoek_without_msl,
-            measurements_wind_daily_rotterdamsehoek_with_msl,
-        ]
-    )
-    .unique(subset=["Naam", "time", "Grootheid.Code"], keep="first")
-    .sort("time")
-)
-# measurements_wind_daily_stavoren = measurements_wind_daily_stavoren.filter(pl.col("time").is_between(dt.datetime(2018, 1, 1), dt.datetime(2018, 12, 31)))
-measurements_wind_daily_stavoren
-# %%
 
 # Get wind direction and speed data
 wind_direction = (
@@ -652,31 +293,6 @@ wind_combined = wind_speed.join(wind_direction, on=["Naam", "time"], how="inner"
 
 # Get unique station names
 unique_stations = wind_combined.select("Naam").unique().sort("Naam")["Naam"].to_list()
-
-# Define compass bins and labels
-compass_directions = {
-    "N": (337.5, 22.5),
-    "NO": (22.5, 67.5),
-    "O": (67.5, 112.5),
-    "ZO": (112.5, 157.5),
-    "Z": (157.5, 202.5),
-    "ZW": (202.5, 247.5),
-    "W": (247.5, 292.5),
-    "NW": (292.5, 337.5),
-}
-
-
-def get_wind_direction_bin(angle):
-    """Bin wind direction angle into compass direction"""
-    for direction, (min_angle, max_angle) in compass_directions.items():
-        if min_angle <= max_angle:
-            if min_angle <= angle < max_angle:
-                return direction
-        else:  # Handle wrap-around for North
-            if angle >= min_angle or angle < max_angle:
-                return direction
-    return "N"
-
 
 # Create subplots for each station
 fig, axes = plt.subplots(
@@ -819,10 +435,11 @@ for year_idx, year in enumerate(unique_years):
                 mode="markers",
                 name=direction_name,
                 marker=dict(
-                    size=10,
+                    size=12,
                     symbol="arrow",
                     angle=arrow_angles[direction_idx],
                     color=color_map[direction_idx],
+                    line=dict(width=0.5, color="rgba(0,0,0,0.15)"),
                 ),
                 hovertext=[
                     times[i].strftime("%Y-%m-%d %H:%M") for i in np.where(mask)[0]
@@ -894,7 +511,6 @@ output_dir.mkdir(parents=True, exist_ok=True)
 output_path = output_dir / f"wind_speed_direction_{station}.html"
 fig.write_html(str(output_path))
 print(f"Saved: {output_path}")
-
 
 # %%
 measurements_debiet_carlijn_daily
@@ -1342,48 +958,6 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     arrow_angles = [180, 225, 270, 315, 0, 45, 90, 135]
 
-    # --- Wind traces Rotterdamse Hoek (row 1) ---
-    # for year_idx, year in enumerate(unique_years_rh):
-    #     year_data = station_data_rh[station_data_rh["year"] == year]
-    #     if len(year_data) == 0:
-    #         continue
-    #     year_data = year_data.sort_values("time")
-    #     times = year_data["time"].to_list()
-    #     wind_speeds = year_data["wind_speed"].to_numpy()
-    #     wind_directions = year_data["wind_direction_num"].to_numpy()
-
-    #     fig_combined.add_trace(go.Scatter(
-    #         x=times,
-    #         y=wind_speeds,
-    #         mode='lines',
-    #         name='Wind Speed RH',
-    #         line=dict(color='grey', width=1),
-    #         opacity=0.5,
-    #         hovertext=[t.strftime("%Y-%m-%d") for t in times],
-    #         hoverinfo='text+y',
-    #         visible=(year_idx == 0),
-    #         legendgroup=f"wind_rh_{year}",
-    #         showlegend=True
-    #     ), row=2, col=1)
-
-    #     for direction_idx in range(8):
-    #         mask = wind_directions == direction_idx
-    #         x_points = np.array(times)[mask]
-    #         y_points = wind_speeds[mask]
-    #         direction_name = compass_list[direction_idx]
-    #         fig_combined.add_trace(go.Scatter(
-    #             x=x_points,
-    #             y=y_points,
-    #             mode='markers',
-    #             name=direction_name,
-    #             marker=dict(size=10, symbol='arrow', angle=arrow_angles[direction_idx], color=color_map[direction_idx]),
-    #             hovertext=[times[i].strftime("%Y-%m-%d") for i in np.where(mask)[0]],
-    #             hoverinfo='text+y',
-    #             visible=(year_idx == 0),
-    #             legendgroup=f"wind_rh_{year}",
-    #             showlegend=True
-    #         ), row=2, col=1)
-
     traces_per_wind_year = 9  # 1 line + 8 directions
     # total_wind_rh_traces = len(unique_years_rh) * traces_per_wind_year
 
@@ -1402,8 +976,8 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 x=times,
                 y=wind_speeds,
                 mode="lines",
-                line=dict(color="grey", width=1),
-                opacity=0.5,
+                line=dict(color="#BFC8CD", width=0.8),
+                opacity=0.4,
                 # hoverinfo='skip',
                 hovertext=[compass_list[d] for d in wind_directions],
                 hovertemplate="%{y} m/s %{hovertext}<extra></extra>",
@@ -1428,10 +1002,14 @@ if measurements_debiet_carlijn_daily_filt is not None:
                     mode="markers",
                     name=direction_name,
                     marker=dict(
-                        size=10,
+                        # size=11,
+                        opacity=np.clip(y_points / 15, 0.5, 1.0),
                         symbol="arrow",
-                        angle=arrow_angles[direction_idx],
+                        size=8 + y_points * 0.4,
                         color=color_map[direction_idx],
+                        angle=arrow_angles[direction_idx],
+                        # color=color_map[direction_idx],
+                        line=dict(width=0.5 + y_points / 15, color="rgba(0,0,0,0.15)"),
                     ),
                     # hovertext=[direction_name for _ in np.where(mask)[0]],
                     # hovertemplate='%{x|%m-%d} %{y} m/s %{hovertext}<extra></extra>',
@@ -1449,7 +1027,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
         hovermode="closest",
         legend1=dict(title="Waterbalans"),
         legend2=dict(title="Stavoren"),
-        legend3=dict(title="Saliniteit<br>op dieptes"),
+        legend3=dict(title="Saliniteit<br>op diepte"),
     )
 
     total_wind_st_traces = len(unique_years_st) * traces_per_wind_year
@@ -1457,11 +1035,11 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     # --- Flow / Waterbalans traces (row 1) ---
     flow_colors = {
-        "Overig in": "#0d91bc",
-        "IJssel": "#00008b",
-        "Stevinsluizen": "#8b0000",
-        "Lorentzsluizen": "#ff0000",
-        "Overig uit": "#ffa07a",
+        "Overig in": "#8CCFE3",
+        "IJssel": "#3366A3",
+        "Stevinsluizen": "#C44E52",
+        "Lorentzsluizen": "#E98B39",
+        "Overig uit": "#F5CDA7",
     }
 
     flow_years = sorted(daily_flows["Year"].unique())
@@ -1532,7 +1110,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 y=[netto.get(d, 0) for d in dates_flow],
                 name="Netto Flow",
                 mode="lines",
-                line=dict(color="black", width=1.3),
+                line=dict(color="#444444", width=1.3),
                 hovertemplate="%{y:,.0f} m³/d Netto Flow<extra></extra>",
                 visible=is_visible,
                 legendgroup=f"flow_{year}",
@@ -1570,15 +1148,15 @@ if measurements_debiet_carlijn_daily_filt is not None:
         n = len(sorted_depths)
         idx = sorted_depths.index(depth)
         if n >= 5:
-            palette = ["#de1212", "#ffb120", "#a8a8a8", "#87cde5", "#1f1fff"]
+            palette = ["#B2182B", "#EF8A62", "#9E9E9E", "#67A9CF", "#2166AC"]
         elif n == 4:
-            palette = ["#de1212", "#ffb120", "#87cde5", "#1f1fff"]
+            palette = ["#B2182B", "#EF8A62", "#67A9CF", "#2166AC"]
         elif n == 3:
-            palette = ["#de1212", "#a8a8a8", "#1f1fff"]
+            palette = ["#B2182B", "#9E9E9E", "#2166AC"]
         elif n == 2:
-            palette = ["#ffb120", "#1f1fff"]
+            palette = ["#EF8A62", "#2166AC"]
         else:
-            palette = ["#1f1fff"]
+            palette = ["#2166AC"]
         # For n > len(palette), clamp to last color
         return palette[min(idx, len(palette) - 1)]
 
@@ -1734,11 +1312,11 @@ if measurements_debiet_carlijn_daily_filt is not None:
         template="plotly_white",
         barmode="relative",
         showlegend=True,
-        paper_bgcolor="#D9E1E4",
-        plot_bgcolor="#E5EDF0",
+        paper_bgcolor="#F4F7F8",
+        plot_bgcolor="#FAFCFC",
         legend=dict(x=1.02, y=1.0, yanchor="top"),
         legend2=dict(x=1.02, y=1.48 / 3, yanchor="top", font=dict(size=12)),
-        legend3=dict(x=1.02, y=0.5 / 3, yanchor="top", font=dict(size=10)),
+        legend3=dict(x=1.02, y=0.7 / 3, yanchor="top", font=dict(size=10)),
         updatemenus=[
             dict(
                 type="dropdown",
@@ -1777,18 +1355,18 @@ if measurements_debiet_carlijn_daily_filt is not None:
         spikedash="dot",
         matches="x",
         showgrid=True,
-        gridcolor="#CED7DC",
-        gridwidth=0.2,
+        gridcolor="#D7E0E4",
+        gridwidth=0.15,
         tickfont=dict(size=14),
     )
 
     fig_combined.update_yaxes(
         showgrid=True,
-        gridcolor="#CED7DC",
-        gridwidth=0.2,
+        gridcolor="#CDD6DB",
+        gridwidth=0.4,
         zeroline=True,
-        zerolinecolor="#7D8386",
-        zerolinewidth=0.5,
+        zerolinecolor="#768089",
+        zerolinewidth=0.9,
         tickfont=dict(size=14),
     )
 
