@@ -1211,103 +1211,143 @@ if measurements_debiet_carlijn_daily_filt is not None:
     total_sal_traces = sal_trace_offset
     total_traces = total_wind_traces + total_flow_traces + total_sal_traces
 
-    # --- Dropdown buttons (combined year + saliniteit location) ---
-    all_years = sorted(set(list(unique_years_st) + list(flow_years)))
+    # --- Independent dropdowns: year + saliniteit location ---
+    # Waterbalans/wind respond to year only.
+    # Saliniteit responds to both selected year and selected location.
+    import json
+
+    yaxis_title_font = dict(family="Arial", size=18)
+
+    all_years = sorted(set(list(unique_years_st) + list(flow_years) + list(sal_years)))
 
     sal_base = total_wind_traces + total_flow_traces
 
+    # Absolute trace-index maps for JavaScript
+    wind_indices_by_year = {}
+    for year in unique_years_st:
+        wind_st_year_idx = unique_years_st.index(year)
+        wind_st_start = wind_st_year_idx * traces_per_wind_year
+        wind_indices_by_year[int(year)] = list(
+            range(wind_st_start, wind_st_start + traces_per_wind_year)
+        )
+
+    flow_indices_by_year = {}
+    for year in flow_years:
+        flow_year_idx = flow_years.index(year)
+        flow_start = total_wind_traces + flow_year_idx * traces_per_flow_year
+        flow_indices_by_year[int(year)] = list(
+            range(flow_start, flow_start + traces_per_flow_year)
+        )
+
+    sal_indices_by_location_year = {}
+    for (location, year), offsets in sal_trace_index_map.items():
+        key = f"{location}||{int(year)}"
+        sal_indices_by_location_year[key] = [sal_base + offset for offset in offsets]
+
+    # Maximum salinity per location/year for dynamic y-axis scaling
+    sal_max_by_location_year = {}
+    for location in sal_locations:
+        for year in sal_years:
+            loc_year_sal = sal_df[
+                (sal_df["Naam"] == location) & (sal_df["year"] == year)
+            ]["Meetwaarde.Waarde_Numeriek"]
+
+            if len(loc_year_sal) > 0:
+                sal_max_by_location_year[f"{location}||{int(year)}"] = float(
+                    loc_year_sal.max()
+                )
+
+    overall_sal_max = float(sal_df["Meetwaarde.Waarde_Numeriek"].max())
+
     def build_visible(year, sal_location):
-        """Build full visible list for a given year and sal location."""
+        """Build visibility for the selected year and salinity location."""
         visible = [False] * total_traces
 
-        # if year in unique_years_rh:
-        #     wind_rh_year_idx = unique_years_rh.index(year)
-        #     wind_rh_start = wind_rh_year_idx * traces_per_wind_year
-        #     for i in range(wind_rh_start, wind_rh_start + traces_per_wind_year):
-        #         visible[i] = True
-
+        # Wind: year only
         if year in unique_years_st:
             wind_st_year_idx = unique_years_st.index(year)
-            wind_st_start = (
-                wind_st_year_idx * traces_per_wind_year
-            )  # total_wind_rh_traces +
+            wind_st_start = wind_st_year_idx * traces_per_wind_year
+
             for i in range(wind_st_start, wind_st_start + traces_per_wind_year):
                 visible[i] = True
 
+        # Waterbalans: year only
         if year in flow_years:
             flow_year_idx = flow_years.index(year)
             flow_start = total_wind_traces + flow_year_idx * traces_per_flow_year
+
             for i in range(flow_start, flow_start + traces_per_flow_year):
                 visible[i] = True
 
-        # Show saliniteit trace for the given location and year only
+        # Saliniteit: year + location
         if sal_location is not None:
             key = (sal_location, year)
+
             if key in sal_trace_index_map:
                 for offset in sal_trace_index_map[key]:
                     visible[sal_base + offset] = True
 
         return visible
 
-    # Default: first year, first location
+    # Defaults
     default_year = all_years[0] if all_years else None
     default_sal_location = sal_locations[0] if sal_locations else None
 
-    # Combined dropdown: one button per (year, location) pair.
-    # Label shows "YEAR | LOCATION" so the user picks both at once.
-    # This is the only way in pure Plotly to keep both selections independent
-    # (changing year preserves location, changing location preserves year).
-    combined_buttons = []
-    for year in all_years:
-        for location in sal_locations:
-            # Only include this combination if there is flow data for the year
-            # or saliniteit data for this (location, year) pair
-            has_flow = year in flow_years
-            has_sal = (location, year) in sal_trace_index_map
-            if not has_flow or not has_sal:
-                continue
-            visible = build_visible(year, sal_location=location)
-            loc_sal_btn = sal_df[
-                (sal_df["Naam"] == location) & (sal_df["year"] == year)
-            ]["Meetwaarde.Waarde_Numeriek"]
-            btn_max_sal = (
-                loc_sal_btn.max()
-                if len(loc_sal_btn) > 0
-                else sal_df["Meetwaarde.Waarde_Numeriek"].max()
-            )
-            combined_buttons.append(
-                dict(
-                    label=f"{year} | {location}",
-                    method="update",
-                    args=[
-                        {"visible": visible},
-                        {
-                            "title": {
-                                "text": f"IJsselmeer waterbalans, wind en saliniteit<br>{year} - {location}",
-                                "font": {"size": 18},
-                                "x": 0.53,
-                                "y": 0.94,
-                            },
-                            "yaxis3.range": [0, btn_max_sal * 1.05],
-                            "xaxis.range": [f"{year-1}-12-24", f"{year+1}-01-07"],
-                            "xaxis2.range": [f"{year-1}-12-24", f"{year}-01-07"],
-                            "xaxis3.range": [f"{year-1}-12-24", f"{year}-01-07"],
-                        },
-                    ],
-                )
-            )
+    # Initial visibility
+    initial_visible = build_visible(default_year, default_sal_location)
 
-    # Set initial visibility for default year + default location
-    initial_visible = build_visible(default_year, sal_location=default_sal_location)
     for trace_idx, vis in enumerate(initial_visible):
         fig_combined.data[trace_idx].visible = vis
+
+    # Dropdown buttons emit events only.
+    # The actual visibility logic is handled by JavaScript in the exported HTML.
+    year_buttons = [
+        dict(
+            label=str(year),
+            method="skip",
+            args=[{"kind": "year", "value": int(year)}],
+        )
+        for year in all_years
+    ]
+
+    location_buttons = [
+        dict(
+            label=str(location),
+            method="skip",
+            args=[{"kind": "sal_location", "value": location}],
+        )
+        for location in sal_locations
+    ]
+
+    default_year_active = (
+        all_years.index(default_year) if default_year in all_years else 0
+    )
+
+    default_location_active = (
+        sal_locations.index(default_sal_location)
+        if default_sal_location in sal_locations
+        else 0
+    )
+
+    # Initial salinity axis range
+    if default_sal_location is not None and default_year is not None:
+        default_sal_key = f"{default_sal_location}||{int(default_year)}"
+        max_sal = sal_max_by_location_year.get(default_sal_key, overall_sal_max)
+    else:
+        max_sal = overall_sal_max
 
     fig_combined.update_layout(
         height=1200,
         width=1000,
-        title="IJsselmeer waterbalans, wind en saliniteit",
-        title_x=0.8,
-        title_y=0.95,
+        title={
+            "text": (
+                f"IJsselmeer waterbalans, wind en saliniteit<br>"
+                f"{default_year} - {default_sal_location}"
+            ),
+            "font": {"size": 18},
+            "x": 0.53,
+            "y": 0.94,
+        },
         hovermode="x",
         template="plotly_white",
         barmode="relative",
@@ -1321,10 +1361,25 @@ if measurements_debiet_carlijn_daily_filt is not None:
             dict(
                 type="dropdown",
                 direction="down",
-                x=0.33,
+                x=0.18,
                 y=1.04,
                 showactive=True,
-                buttons=combined_buttons,
+                active=default_year_active,
+                buttons=year_buttons,
+                bgcolor="white",
+                bordercolor="black",
+                borderwidth=0.5,
+                pad={"r": 10, "t": 1},
+                font={"size": 9},
+            ),
+            dict(
+                type="dropdown",
+                direction="down",
+                x=0.50,
+                y=1.04,
+                showactive=True,
+                active=default_location_active,
+                buttons=location_buttons,
                 bgcolor="white",
                 bordercolor="black",
                 borderwidth=0.5,
@@ -1334,8 +1389,17 @@ if measurements_debiet_carlijn_daily_filt is not None:
         ],
         annotations=[
             dict(
-                text="Jaar | Locatie:",
+                text="Jaar:",
                 x=0.12,
+                y=1.04,
+                xref="paper",
+                yref="paper",
+                showarrow=False,
+                xanchor="left",
+            ),
+            dict(
+                text="Saliniteit locatie:",
+                x=0.34,
                 y=1.04,
                 xref="paper",
                 yref="paper",
@@ -1345,64 +1409,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
         ],
     )
 
-    # Shared x-axis spike line for cross-subplot hover vertical line
-    fig_combined.update_xaxes(
-        showspikes=True,
-        spikemode="across+toaxis",
-        spikesnap="cursor",
-        spikecolor="black",
-        spikethickness=1,
-        spikedash="dot",
-        matches="x",
-        showgrid=True,
-        gridcolor="#D7E0E4",
-        gridwidth=0.15,
-        tickfont=dict(size=14),
-    )
-
-    fig_combined.update_yaxes(
-        showgrid=True,
-        gridcolor="#CDD6DB",
-        gridwidth=0.4,
-        zeroline=True,
-        zerolinecolor="#768089",
-        zerolinewidth=0.9,
-        tickfont=dict(size=14),
-    )
-
-    # max_wind_rh = station_data_rh["wind_speed"].max() if len(station_data_rh) > 0 else 20
-    max_wind_st = (
-        station_data_st["wind_speed"].max() if len(station_data_st) > 0 else 20
-    )
-
-    yaxis_title_font = dict(family="Arial", size=18)
-
-    fig_combined.update_yaxes(
-        title_text="Debiet [miljoen m3/d]", title_font=yaxis_title_font, row=1, col=1
-    )
-    # fig_combined.update_yaxes(title_text="Wind snelheid [m/s] (RH)", row=2, col=1,
-    #                            range=[0, max_wind_rh * 1.2])
-    fig_combined.update_yaxes(
-        title_text="Wind snelheid [m/s]",
-        title_font=yaxis_title_font,
-        row=2,
-        col=1,
-        range=[0, max_wind_st * 1.1],
-    )
-    if default_sal_location is not None:
-        loc_sal = sal_df[sal_df["Naam"] == default_sal_location][
-            "Meetwaarde.Waarde_Numeriek"
-        ]
-        max_sal = (
-            loc_sal.max()
-            if len(loc_sal) > 0
-            else sal_df["Meetwaarde.Waarde_Numeriek"].max()
-        )
-        print(f"Default saliniteit location: {default_sal_location}, max: {max_sal}")
-    else:
-        max_sal = sal_df["Meetwaarde.Waarde_Numeriek"].max()
-        print("No default saliniteit location found; using overall max:", max_sal)
-
+    # Initial salinity y-axis range
     fig_combined.update_yaxes(
         title_text="Concentratie [mg/l]",
         title_font=yaxis_title_font,
@@ -1411,22 +1418,108 @@ if measurements_debiet_carlijn_daily_filt is not None:
         range=[0, max_sal * 1.05],
     )
 
-    # Constrain x-axis to the default year to remove extra whitespace at the edges
+    # Initial x-axis range
     if default_year is not None:
         fig_combined.update_xaxes(
-            range=[f"{default_year-1}-12-24", f"{default_year+1}-01-07"]
+            range=[f"{default_year - 1}-12-24", f"{default_year + 1}-01-07"]
         )
+
+    # JavaScript state manager for independent dropdowns
+    post_script = f"""
+    (function() {{
+        const gd = document.getElementById('{{plot_id}}');
+
+        const totalTraces = {total_traces};
+
+        const windByYear = {json.dumps(wind_indices_by_year)};
+        const flowByYear = {json.dumps(flow_indices_by_year)};
+        const salByLocationYear = {json.dumps(sal_indices_by_location_year)};
+        const salMaxByLocationYear = {json.dumps(sal_max_by_location_year)};
+
+        const overallSalMax = {overall_sal_max};
+
+        const state = {{
+            year: {json.dumps(int(default_year) if default_year is not None else None)},
+            salLocation: {json.dumps(default_sal_location)}
+        }};
+
+        function addVisible(visible, indices) {{
+            if (!indices) return;
+
+            for (const idx of indices) {{
+                visible[idx] = true;
+            }}
+        }}
+
+        function updateFigure() {{
+            const visible = Array(totalTraces).fill(false);
+
+            const yearKey = String(state.year);
+            const salKey = state.salLocation + "||" + String(state.year);
+
+            // Jaar stuurt waterbalans en wind
+            addVisible(visible, windByYear[yearKey]);
+            addVisible(visible, flowByYear[yearKey]);
+
+            // Jaar + locatie sturen saliniteit
+            addVisible(visible, salByLocationYear[salKey]);
+
+            const salMax = salMaxByLocationYear[salKey] || overallSalMax;
+
+            const layoutUpdate = {{
+                "title.text": "IJsselmeer waterbalans, wind en saliniteit<br>" +
+                            state.year + " - " + state.salLocation,
+                "xaxis.range": [
+                    String(state.year - 1) + "-12-24",
+                    String(state.year + 1) + "-01-07"
+                ],
+                "xaxis2.range": [
+                    String(state.year - 1) + "-12-24",
+                    String(state.year + 1) + "-01-07"
+                ],
+                "xaxis3.range": [
+                    String(state.year - 1) + "-12-24",
+                    String(state.year + 1) + "-01-07"
+                ],
+                "yaxis3.range": [0, salMax * 1.05]
+            }};
+
+            Plotly.update(gd, {{visible: visible}}, layoutUpdate);
+        }}
+
+        gd.on("plotly_buttonclicked", function(eventData) {{
+            if (!eventData || !eventData.button || !eventData.button.args) return;
+
+            const payload = eventData.button.args[0];
+
+            if (payload.kind === "year") {{
+                state.year = payload.value;
+            }}
+
+            if (payload.kind === "sal_location") {{
+                state.salLocation = payload.value;
+            }}
+
+            updateFigure();
+        }});
+
+        updateFigure();
+    }})();
+    """
 
     combined_output_path = (
         output_dir / f"interactive_plot_waterbalans_wind_saliniteit_{TODAY}.html"
     )
+
     fig_combined.write_html(
         str(combined_output_path),
-        full_html=False,
+        full_html=True,
         include_plotlyjs=True,
+        post_script=post_script,
         default_height=1200,
         default_width=1000,
     )
+
     print(f"Saved combined: {combined_output_path}")
     fig_combined.show()
 
