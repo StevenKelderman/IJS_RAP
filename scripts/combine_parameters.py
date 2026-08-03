@@ -408,11 +408,12 @@ for year_idx, year in enumerate(unique_years):
             x=times,
             y=wind_speeds,
             mode="lines",
-            name="Wind Speed",
+            name="Windsnelheid",
             line=dict(color="grey", width=1),
             opacity=0.5,
-            hovertext=[t.strftime("%Y-%m-%d %H:%M") for t in times],
-            hoverinfo="text+y",
+            hovertext=[compass_list[d] for d in wind_directions],
+            hovertemplate="%{y:.2f} m/s %{hovertext}<extra></extra>",
+            hoverlabel=dict(bgcolor=[color_map[d] for d in wind_directions]),
             visible=(year_idx == 0),
             legendgroup=str(year),
             showlegend=True,
@@ -435,16 +436,19 @@ for year_idx, year in enumerate(unique_years):
                 mode="markers",
                 name=direction_name,
                 marker=dict(
-                    size=12,
+                    # size=11,
+                    opacity=np.clip(y_points / 15, 0.8, 1.0),
                     symbol="arrow",
-                    angle=arrow_angles[direction_idx],
+                    size=8 + y_points * 0.4,
                     color=color_map[direction_idx],
-                    line=dict(width=0.5, color="rgba(0,0,0,0.15)"),
+                    angle=arrow_angles[direction_idx],
+                    # color=color_map[direction_idx],
+                    line=dict(width=0.5 + y_points / 15, color="rgba(0,0,0,0.15)"),
                 ),
-                hovertext=[
-                    times[i].strftime("%Y-%m-%d %H:%M") for i in np.where(mask)[0]
-                ],
-                hoverinfo="text+y",
+                # hovertext=[
+                #     times[i].strftime("%Y-%m-%d %H:%M") for i in np.where(mask)[0]
+                # ],
+                hoverinfo="skip",
                 visible=(year_idx == 0),
                 legendgroup=str(year),
                 showlegend=True,
@@ -471,8 +475,7 @@ for year_idx, year in enumerate(unique_years):
             args=[
                 {"visible": visible},
                 {
-                    "title": f"Wind Speed with Direction - {station} ({year})",
-                    "legend": dict(title="Wind Direction", x=1.0, y=1.0),
+                    "title.text": f"Wind snelheid met richting - {station} ({year})",
                 },
             ],
         )
@@ -483,24 +486,25 @@ fig.update_layout(
         dict(
             type="dropdown",
             direction="down",
-            x=0.0,
-            y=1.15,
+            x=0.04,
+            y=1.08,
             showactive=True,
             buttons=buttons,
             bgcolor="white",
-            bordercolor="black",
-            borderwidth=1,
+            borderwidth=0.5,
+            pad={"r": 5, "t": 1},
+            font={"size": 12},
         )
     ],
-    title=f"Wind Speed with Direction - {station} ({unique_years[0]})",
+    title=f"Wind snelheid met richting - {station} ({unique_years[0]})",
     # xaxis_title="Time progression",
     yaxis_title="Wind snelheid [m/s]",
     hovermode="closest",
     template="plotly_white",
     height=600,
-    width=1400,
+    width=1000,
     showlegend=True,
-    legend=dict(title="Wind Direction", x=1.0, y=1.0),
+    legend=dict(title="Windrichting", x=1.0, y=1.0),
 )
 
 fig.update_yaxes(range=[0, station_data["wind_speed"].max() * 1.1])
@@ -510,7 +514,15 @@ output_dir.mkdir(parents=True, exist_ok=True)
 
 output_path = output_dir / f"wind_speed_direction_{station}.html"
 fig.write_html(str(output_path))
-print(f"Saved: {output_path}")
+fig.write_html(
+    str(output_path),
+    full_html=True,
+    include_plotlyjs=True,
+    default_height=600,
+    default_width=1000,
+)
+print(f"Saved combined: {output_path}")
+fig.show()
 
 # %%
 measurements_debiet_carlijn_daily
@@ -926,9 +938,16 @@ if measurements_debiet_carlijn_daily_filt is not None:
     station_data_st = prepare_station_data(measurements_wind_daily, "Stavoren")
     print(f"Stavoren data points: {len(station_data_st)}")
 
+    YEAR_MIN = 2018
+    YEAR_MAX = 2022
+
     # unique_years_rh = sorted(station_data_rh["year"].unique().tolist()) if len(station_data_rh) > 0 else []
     unique_years_st = (
-        sorted(station_data_st["year"].unique().tolist())
+        sorted(
+            y
+            for y in station_data_st["year"].unique().tolist()
+            if YEAR_MIN <= y <= YEAR_MAX
+        )
         if len(station_data_st) > 0
         else []
     )
@@ -948,11 +967,10 @@ if measurements_debiet_carlijn_daily_filt is not None:
         shared_xaxes=True,
         subplot_titles=(
             "Daily Inflows and Outflows (Waterbalans)",
-            # "Wind Speed with Direction - Rotterdamse Hoek",
             "Wind Speed with Direction - Stavoren",
             "Saliniteit",
         ),
-        vertical_spacing=0.008,
+        vertical_spacing=0.01,
         row_heights=[0.4, 0.15, 0.25],
     )
 
@@ -1042,7 +1060,9 @@ if measurements_debiet_carlijn_daily_filt is not None:
         "Overig uit": "#F5CDA7",
     }
 
-    flow_years = sorted(daily_flows["Year"].unique())
+    flow_years = sorted(
+        y for y in daily_flows["Year"].unique() if YEAR_MIN <= y <= YEAR_MAX
+    )
 
     for year_idx, year in enumerate(flow_years):
         year_data_flow = daily_flows.filter(pl.col("Year") == year).sort("Datum")
@@ -1162,7 +1182,11 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     # Build saliniteit traces: one trace per location, all years combined
     # Traces are grouped by location; within each location there is one trace per year
-    sal_years = sorted(sal_df["year"].dropna().astype(int).unique().tolist())
+    sal_years = sorted(
+        y
+        for y in sal_df["year"].dropna().astype(int).unique().tolist()
+        if YEAR_MIN <= y <= YEAR_MAX
+    )
     # (location, year) -> list of trace index offsets from sal_start
     sal_trace_index_map = {}
 
@@ -1218,7 +1242,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     yaxis_title_font = dict(family="Arial", size=18)
 
-    all_years = sorted(set(list(unique_years_st) + list(flow_years) + list(sal_years)))
+    all_years = list(range(YEAR_MIN, YEAR_MAX + 1))
 
     sal_base = total_wind_traces + total_flow_traces
 
@@ -1361,7 +1385,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
             dict(
                 type="dropdown",
                 direction="down",
-                x=0.18,
+                x=0.1,
                 y=1.04,
                 showactive=True,
                 active=default_year_active,
@@ -1369,28 +1393,28 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 bgcolor="white",
                 bordercolor="black",
                 borderwidth=0.5,
-                pad={"r": 10, "t": 1},
-                font={"size": 9},
+                pad={"r": 5, "t": 1},
+                font={"size": 12},
             ),
             dict(
                 type="dropdown",
                 direction="down",
-                x=0.50,
-                y=1.04,
+                x=0.43,
+                y=0.285,
                 showactive=True,
                 active=default_location_active,
                 buttons=location_buttons,
                 bgcolor="white",
                 bordercolor="black",
                 borderwidth=0.5,
-                pad={"r": 10, "t": 1},
-                font={"size": 8},
+                pad={"r": 5, "t": 1},
+                font={"size": 12},
             ),
         ],
         annotations=[
             dict(
                 text="Jaar:",
-                x=0.12,
+                x=-0.03,
                 y=1.04,
                 xref="paper",
                 yref="paper",
@@ -1399,14 +1423,29 @@ if measurements_debiet_carlijn_daily_filt is not None:
             ),
             dict(
                 text="Saliniteit locatie:",
-                x=0.34,
-                y=1.04,
+                x=0.02,
+                y=0.285,
                 xref="paper",
                 yref="paper",
                 showarrow=False,
                 xanchor="left",
             ),
         ],
+    )
+
+    # Update y-axis titles for all subplots
+    fig_combined.update_yaxes(
+        title_text="Debiet [miljoen m³/dag]",
+        title_font=yaxis_title_font,
+        row=1,
+        col=1,
+    )
+
+    fig_combined.update_yaxes(
+        title_text="Windsnelheid [m/s]",
+        title_font=yaxis_title_font,
+        row=2,
+        col=1,
     )
 
     # Initial salinity y-axis range
@@ -1424,6 +1463,20 @@ if measurements_debiet_carlijn_daily_filt is not None:
             range=[f"{default_year - 1}-12-24", f"{default_year + 1}-01-07"]
         )
 
+    # Build a dictionary of empty combinations for JavaScript
+    empty_combinations = {}
+    for location in sal_locations:
+        for year in sal_years:
+            key = f"{location}||{int(year)}"
+            year_int = int(year)
+            if (
+                key not in sal_indices_by_location_year
+                or sal_indices_by_location_year[key] is None
+                or len(sal_indices_by_location_year[key]) == 0
+            ):
+                if key not in empty_combinations:
+                    empty_combinations[key] = True
+
     # JavaScript state manager for independent dropdowns
     post_script = f"""
     (function() {{
@@ -1435,8 +1488,10 @@ if measurements_debiet_carlijn_daily_filt is not None:
         const flowByYear = {json.dumps(flow_indices_by_year)};
         const salByLocationYear = {json.dumps(sal_indices_by_location_year)};
         const salMaxByLocationYear = {json.dumps(sal_max_by_location_year)};
+        const emptyLocationYearCombinations = {json.dumps(empty_combinations)};
 
         const overallSalMax = {overall_sal_max};
+        const maxSal = {max_sal};
 
         const state = {{
             year: {json.dumps(int(default_year) if default_year is not None else None)},
@@ -1466,6 +1521,25 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
             const salMax = salMaxByLocationYear[salKey] || overallSalMax;
 
+            // Check if current combination is empty
+            const hasData = salByLocationYear[salKey] && salByLocationYear[salKey].length > 0;
+
+            // Build annotations - only show "Geen data beschikbaar" if no data
+            const annotations = gd.layout.annotations.filter(ann => ann.text !== "Geen data beschikbaar");
+            if (!hasData) {{
+                annotations.push({{
+                    text: "Geen data beschikbaar",
+                    xref: "paper",
+                    yref: "paper",
+                    x: 0.5,
+                    y: (gd.layout.yaxis3.domain[0] + gd.layout.yaxis3.domain[1]) / 2,
+                    showarrow: false,
+                    font: {{size: 48, color: "rgba(200, 200, 200, 0.3)"}},
+                    xanchor: "center",
+                    yanchor: "middle"
+                }});
+            }}
+
             const layoutUpdate = {{
                 "title.text": "IJsselmeer waterbalans, wind en saliniteit<br>" +
                             state.year + " - " + state.salLocation,
@@ -1481,7 +1555,8 @@ if measurements_debiet_carlijn_daily_filt is not None:
                     String(state.year - 1) + "-12-24",
                     String(state.year + 1) + "-01-07"
                 ],
-                "yaxis3.range": [0, salMax * 1.05]
+                "yaxis3.range": [0, salMax * 1.05],
+                "annotations": annotations
             }};
 
             Plotly.update(gd, {{visible: visible}}, layoutUpdate);

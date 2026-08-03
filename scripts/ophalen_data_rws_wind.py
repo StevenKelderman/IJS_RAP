@@ -70,7 +70,7 @@ locations_pl
 # %%
 # Read geopackage and find points within
 
-gpkg_path = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\IJSSELMEER5.gpkg"
+gpkg_path = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\GIS\IJSSELMEER5.gpkg"
 
 # Read the geopackage
 gdf_boundary = gpd.read_file(gpkg_path)
@@ -1200,6 +1200,157 @@ locations_pl_coords = locations_pl.select(
 locations_pl_coords
 # %%
 percentile_stats
+
+# %%
+
+# Define compass bins and labels (used for wind plots)
+compass_directions = {
+    "N": (337.5, 22.5),
+    "NO": (22.5, 67.5),
+    "O": (67.5, 112.5),
+    "ZO": (112.5, 157.5),
+    "Z": (157.5, 202.5),
+    "ZW": (202.5, 247.5),
+    "W": (247.5, 292.5),
+    "NW": (292.5, 337.5),
+}
+
+
+def get_wind_direction_bin(angle):
+    """Bin wind direction angle into compass direction"""
+    for direction, (min_angle, max_angle) in compass_directions.items():
+        if min_angle <= max_angle:
+            if min_angle <= angle < max_angle:
+                return direction
+        else:  # Handle wrap-around for North
+            if angle >= min_angle or angle < max_angle:
+                return direction
+    return "N"
+
+    station_name_st = "Stavoren"
+
+    def prepare_station_data(wind_combined_pl, station_name_filter):
+        """Filter wind_combined for a station name substring and return a pandas df with year/direction columns.
+
+        wind_combined_pl contains both WINDSNELHEID and WINDRICHTING rows, distinguished by Grootheid.Code.
+        These are pivoted into wind_speed and wind_direction columns.
+        """
+        df_filtered = wind_combined_pl.filter(
+            pl.col("Naam").str.contains(station_name_filter)
+        )
+
+        df_speed = df_filtered.filter(pl.col("Grootheid.Code") == "WINDSHD").select(
+            ["time", "Naam", pl.col("Meetwaarde.Waarde_Numeriek").alias("wind_speed")]
+        )
+        df_dir = df_filtered.filter(pl.col("Grootheid.Code") == "WINDRTG").select(
+            [
+                "time",
+                "Naam",
+                pl.col("Meetwaarde.Waarde_Numeriek").alias("wind_direction"),
+            ]
+        )
+
+        df_pivot = (
+            df_speed.join(df_dir, on=["time", "Naam"], how="full", coalesce=True)
+            .sort("time")
+            .to_pandas()
+        )
+
+        df_pivot["wind_speed"] = df_pivot["wind_speed"].round(1)
+        df_pivot["wind_direction"] = df_pivot["wind_direction"].round(1)
+        df_pivot["wind_direction_bin"] = df_pivot["wind_direction"].apply(
+            get_wind_direction_bin
+        )
+        direction_to_num = {d: i for i, d in enumerate(compass_directions.keys())}
+        df_pivot["wind_direction_num"] = df_pivot["wind_direction_bin"].map(
+            direction_to_num
+        )
+        df_pivot["year"] = df_pivot["time"].dt.year
+        return df_pivot
+
+    # station_data_rh = prepare_station_data(measurements_wind_daily, "Rotterdamse")
+    # print(f"Rotterdamse Hoek data points: {len(station_data_rh)}")
+    station_data_st = prepare_station_data(measurements_wind_daily, "Stavoren")
+    print(f"Stavoren data points: {len(station_data_st)}")
+
+    YEAR_MIN = 2018
+    YEAR_MAX = 2022
+
+    # unique_years_rh = sorted(station_data_rh["year"].unique().tolist()) if len(station_data_rh) > 0 else []
+    unique_years_st = (
+        sorted(
+            y
+            for y in station_data_st["year"].unique().tolist()
+            if YEAR_MIN <= y <= YEAR_MAX
+        )
+        if len(station_data_st) > 0
+        else []
+    )
+
+    arrow_angles = [180, 225, 270, 315, 0, 45, 90, 135]
+    # --- Wind traces Stavoren (row 2) ---
+    for year_idx, year in enumerate(unique_years_st):
+        year_data = station_data_st[station_data_st["year"] == year]
+        if len(year_data) == 0:
+            continue
+        year_data = year_data.sort_values("time")
+        times = year_data["time"].to_list()
+        wind_speeds = year_data["wind_speed"].to_numpy()
+        wind_directions = year_data["wind_direction_num"].to_numpy()
+
+        fig_combined.add_trace(
+            go.Scatter(
+                x=times,
+                y=wind_speeds,
+                mode="lines",
+                line=dict(color="#BFC8CD", width=0.8),
+                opacity=0.4,
+                # hoverinfo='skip',
+                hovertext=[compass_list[d] for d in wind_directions],
+                hovertemplate="%{y} m/s %{hovertext}<extra></extra>",
+                hoverlabel=dict(bgcolor=[color_map[d] for d in wind_directions]),
+                visible=(year_idx == 0),
+                legendgroup=f"wind_st_{year}",
+                showlegend=False,
+            ),
+            row=2,
+            col=1,
+        )
+
+        for direction_idx in range(8):
+            mask = wind_directions == direction_idx
+            x_points = np.array(times)[mask]
+            y_points = wind_speeds[mask]
+            direction_name = compass_list[direction_idx]
+            fig_combined.add_trace(
+                go.Scatter(
+                    x=x_points,
+                    y=y_points,
+                    mode="markers",
+                    name=direction_name,
+                    marker=dict(
+                        # size=11,
+                        opacity=np.clip(y_points / 15, 0.5, 1.0),
+                        symbol="arrow",
+                        size=8 + y_points * 0.4,
+                        color=color_map[direction_idx],
+                        angle=arrow_angles[direction_idx],
+                        # color=color_map[direction_idx],
+                        line=dict(width=0.5 + y_points / 15, color="rgba(0,0,0,0.15)"),
+                    ),
+                    # hovertext=[direction_name for _ in np.where(mask)[0]],
+                    # hovertemplate='%{x|%m-%d} %{y} m/s %{hovertext}<extra></extra>',
+                    hoverinfo="skip",
+                    visible=(year_idx == 0),
+                    legendgroup=f"wind_st_{year}",
+                    legend="legend2",
+                    showlegend=True,
+                ),
+                row=2,
+                col=1,
+            )
+
+
 # %%
 
 # Create figure with standard projection
@@ -1345,3 +1496,5 @@ m.save(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\wind\interactive_map_wind_locations2.html"
 )
 print("Interactive map saved to: interactive_map_wind_locations.html")
+
+# %%

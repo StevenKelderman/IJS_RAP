@@ -2,6 +2,7 @@
 # Imports
 import datetime as dt
 import logging
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -20,12 +21,21 @@ logging.basicConfig()
 logging.getLogger("ddlpy").setLevel(logging.INFO)
 
 # %%
+TODAY = dt.datetime.now().strftime("%Y%m%d")
 
 PROJECT_DIR = Path(r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer")
 
-DATA_OUTPUT_DIR = PROJECT_DIR / "analyse" / "data" / "4_output"
+DATA_RAW_DIR = PROJECT_DIR / "analyse" / "data" / "1_raw"
+DATA_EXTERNAL_DIR = PROJECT_DIR / "analyse" / "data" / "2_external"
+DATA_PROCESSED_DIR = PROJECT_DIR / "analyse" / "data" / "3_processed" / f"run_{TODAY}"
+DATA_OUTPUT_DIR = PROJECT_DIR / "analyse" / "data" / "4_output" / f"run_{TODAY}"
+DATA_GIS_DIR = PROJECT_DIR / "analyse" / "data" / "GIS"
+DATA_OUTPUT_FIG_DIR = DATA_OUTPUT_DIR / "figuren" / "debiet"
 
-TODAY = dt.datetime.now().strftime("%Y%m%d")
+os.makedirs(DATA_PROCESSED_DIR, exist_ok=True)
+os.makedirs(DATA_OUTPUT_DIR, exist_ok=True)
+os.makedirs(DATA_OUTPUT_FIG_DIR, exist_ok=True)
+
 # %%
 
 locations = ddlpy.locations()
@@ -56,7 +66,7 @@ locations_pl
 # %%
 # Read geopackage and find points within
 
-gpkg_path = PROJECT_DIR / "analyse" / "data" / "3_processed" / "IJSSELMEER5.gpkg"
+gpkg_path = DATA_GIS_DIR / "IJSSELMEER5.gpkg"
 
 # Read the geopackage
 gdf_boundary = gpd.read_file(gpkg_path)
@@ -91,8 +101,8 @@ print(unique_location_codes)
 
 bool_stations = locations.index.isin(
     [
-        "denoever.waddenzee.voorhaven",
-        "kornwerderzand.waddenzee.buitenhaven",
+        # "denoever.waddenzee.voorhaven",
+        # "kornwerderzand.waddenzee.buitenhaven",
         # "dronten.roggebotsluis.spuikoker",
         # "dronten.roggebotsluis.vossemeer",
         # "genemuiden",
@@ -102,7 +112,7 @@ bool_stations = locations.index.isin(
         # "lemmer.woudagemaal.stroomkanaal",
         # "stavoren.gemaalhoogland.buiten",
         # "stavoren.johanfrisokanaal",
-        # "olst",
+        "olst",
     ]
 )
 bool_grootheid = locations["Grootheid.Code"].isin(["Q"])
@@ -138,10 +148,7 @@ date_ranges = [(f"{year}-01-01", f"{year}-12-31") for year in range(2018, 2027)]
 # Helper function to create progress tracking filename
 def get_location_progress_file(location_name):
     return (
-        PROJECT_DIR
-        / "analyse"
-        / "data"
-        / "1_raw"
+        DATA_RAW_DIR
         / "per_location_per_year"
         / "debiet"
         / f".progress_{location_name.replace(' ', '_').replace(',', '_')}.json"
@@ -201,10 +208,7 @@ for location_name, location_group in grouped_by_location:
 
         # Create output file for this location+daterange combination
         location_file = (
-            PROJECT_DIR
-            / "analyse"
-            / "data"
-            / "1_raw"
+            DATA_RAW_DIR
             / "per_location_per_year"
             / "debiet"
             / f"measurements_RWS_ijsselmeer_debiet_{location_name.replace(' ', '_').replace(',', '')}_{date_range_key[0:4]}_{TODAY}.parquet"
@@ -268,13 +272,7 @@ print(f"{'='*80}")
 # READ WADAR
 measurements = (
     pl.scan_parquet(
-        PROJECT_DIR
-        / "analyse"
-        / "data"
-        / "1_raw"
-        / "per_location_per_year"
-        / "debiet"
-        / "*.parquet",
+        DATA_RAW_DIR / "per_location_per_year" / "debiet" / "*.parquet",
         missing_columns="insert",
     )
     .filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50)
@@ -367,13 +365,7 @@ overview_with_range.write_excel(
     DATA_OUTPUT_DIR / "overzicht_debiet_per_station_parameter.xlsx",
 )
 # %%
-output_dir = (
-    PROJECT_DIR
-    / "analyse"
-    / "data"
-    / "2_external"
-    / "measurements_RWS_ijsselmeer_debiet_per_combo"
-)
+output_dir = DATA_EXTERNAL_DIR / "measurements_RWS_ijsselmeer_debiet_per_combo"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -466,14 +458,14 @@ for idx, row in enumerate(group_keys.iter_rows(named=True)):
         filtered["time"],
         filtered["Meetwaarde.Waarde_Numeriek"],
         linewidth=0.5,
-        label="Discharge",
+        label="Debiet",
     )
     ax1.axhline(y=0, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
-    ax1.set_title(f"Discharge for {naam}\n{param}")
-    ax1.set_ylabel(f"Discharge ({eenheid})")
+    ax1.set_title(f"Debiet voor {naam}\n{param}")
+    ax1.set_ylabel(f"Debiet ({eenheid})")
     ax1.set_xlim(dt.datetime(1989, 12, 31), dt.datetime(2026, 4, 1))
     ax1.axvspan(
-        dt.datetime(2018, 1, 1), dt.datetime(2026, 1, 1), alpha=0.2, color="grey"
+        dt.datetime(2018, 1, 1), dt.datetime(2027, 1, 1), alpha=0.2, color="grey"
     )
     ax1.grid(True, alpha=0.3)
 
@@ -492,7 +484,7 @@ for idx, row in enumerate(group_keys.iter_rows(named=True)):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "debiet" / "discharge_and_cumulative_per_station.png",
+    DATA_OUTPUT_FIG_DIR / "debiet_and_cumulative_per_station.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -551,7 +543,7 @@ for idx, naam in enumerate(unique_names):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "debiet" / "monthly_median_per_year.png",
+    DATA_OUTPUT_FIG_DIR / "monthly_median_per_year.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -636,7 +628,7 @@ for idx, naam in enumerate(unique_names):
 
 plt.tight_layout()
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "debiet" / "monthly_median_with_ci_per_year.png",
+    DATA_OUTPUT_FIG_DIR / "monthly_median_with_ci_per_year.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -727,7 +719,7 @@ ax.set_xlabel("Lengtegraad")
 ax.set_ylabel("Breedtegraad")
 plt.title("Debiet Meetlocaties (OpenStreetMap)")
 plt.savefig(
-    DATA_OUTPUT_DIR / "figuren" / "debiet" / "debiet_locations_map.png",
+    DATA_OUTPUT_FIG_DIR / "debiet_locations_map.png",
     dpi=300,
     bbox_inches="tight",
 )
@@ -794,8 +786,10 @@ legend_html = """
 </div>
 """
 # Save interactive map
-m.save(DATA_OUTPUT_DIR / "figuren" / "debiet" / "interactive_map_debiet_locations.html")
-print("Interactive map saved to: interactive_map_debiet_locations.html")
+m.save(DATA_OUTPUT_FIG_DIR / "interactive_map_debiet_locations.html")
+print(
+    f"Interactive map saved to: {DATA_OUTPUT_FIG_DIR / 'interactive_map_debiet_locations.html'}"
+)
 # %%
 import pandas as pd
 
@@ -879,10 +873,94 @@ for file in files:
     ax.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(
-        DATA_OUTPUT_DIR
-        / "figuren"
-        / "debiet"
-        / f"daily_min_max_debiet_{file.replace(' ', '_')}.png",
+        DATA_OUTPUT_FIG_DIR / f"daily_min_max_debiet_{file.replace(' ', '_')}.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.show()
+# %%
+measurements_daily["Naam"].unique()
+measurements_daily
+# %%
+# Plot individual locations
+
+# List of Naam to include (adjust as needed)
+naam_include = [
+    "Olst",  # IJsselafvoer bij Olst
+    "Lelystad, Houtribsluis, noord",  # Spuien van Markermeer naar IJsselmeer en andersom
+    "Krabbersgat, IJsselmeer",  # Spuien van Markermeer naar IJsselmeer en andersom
+    "Den Oever, Waddenzee voorhaven",  # Spuien Afsluitdijk (Stevin en Lorentz sluizen)
+    "Kornwerderzand Waddenzee buitenhaven",  # Spuien Afsluitdijk (Stevin en Lorentz sluizen)
+]
+
+group_keys = (
+    measurements_daily.filter(pl.col("Naam").is_in(naam_include))
+    .select(["Naam", "Parameter_Wat_Omschrijving", "Eenheid.Code"])
+    .unique()
+    .sort(["Naam", "Parameter_Wat_Omschrijving", "Eenheid.Code"])
+)
+
+for row in group_keys.iter_rows(named=True):
+    naam = row["Naam"]
+    param = row["Parameter_Wat_Omschrijving"]
+    eenheid = row["Eenheid.Code"]
+    filtered = measurements_daily.filter(
+        (pl.col("Naam") == naam)
+        & (pl.col("Parameter_Wat_Omschrijving") == param)
+        & (pl.col("Eenheid.Code") == eenheid)
+    ).sort("time")
+
+    # Plot discharge
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+    ax1.plot(
+        filtered["time"],
+        filtered["Meetwaarde.Waarde_Numeriek"],
+        linewidth=0.5,
+        color="lightgrey",
+        label="Debiet",
+        zorder=1,
+    )
+
+    # Color points by distinction in controle and bewerkingsmethode
+    color_cols = [
+        "WaarnemingMetadata.Statuswaarde",
+        "WaardeBewerkingsMethode.Omschrijving",
+    ]
+    combo = filtered.with_columns(
+        (
+            pl.col(color_cols[0]).cast(pl.String).fill_null("NA")
+            + " | "
+            + pl.col(color_cols[1]).cast(pl.String).fill_null("NA")
+        ).alias("_combo")
+    )
+    categories = combo["_combo"].unique().sort().to_list()
+    cmap = plt.get_cmap("tab10")
+    for i, cat in enumerate(categories):
+        sub = combo.filter(pl.col("_combo") == cat)
+        ax1.scatter(
+            sub["time"],
+            sub["Meetwaarde.Waarde_Numeriek"],
+            s=7,
+            color=cmap(i % 10),
+            label=cat,
+            zorder=2,
+        )
+
+    ax1.axhline(y=0, color="grey", linestyle="-", linewidth=1, alpha=0.7)
+    ax1.set_title(f"Debiet voor {naam}\n{param}")
+    ax1.set_ylabel(f"Debiet ({eenheid})")
+    ax1.set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
+    # ax1.axvspan(
+    #     dt.datetime(2018, 1, 1), dt.datetime(2027, 1, 1), alpha=0.2, color="lightgrey"
+    # )
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(fontsize="small", title=" | ".join(color_cols))
+
+    plt.tight_layout()
+    safe_naam = naam.replace(" ", "_").replace("/", "-")
+    safe_param = param.replace(" ", "_").replace("/", "-")
+    plt.savefig(
+        DATA_OUTPUT_FIG_DIR / f"debiet_{safe_naam}_{safe_param}_{TODAY}.png",
         dpi=300,
         bbox_inches="tight",
     )

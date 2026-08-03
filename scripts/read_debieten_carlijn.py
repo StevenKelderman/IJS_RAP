@@ -233,11 +233,9 @@ if dfs:
 
     ax.axhline(y=0, color="gray", linestyle="--", linewidth=1)
     ax.set_ylabel("Q in miljoen m3")
-    ax.set_title(
-        "Monthly Inflows (Additions) and Outflows (Subtractions) with Netto Flow and Berging IJsselmeer"
-    )
-    ax.set_xlabel("Month")
-    ax.legend(title="NAME", bbox_to_anchor=(1.1, 1), loc="upper left")
+    ax.set_title("Maandelijkse In- en Uitstroom debiet en netto debiet")
+    ax.set_xlabel("Maand")
+    ax.legend(title="NAME", bbox_to_anchor=(1.01, 1), loc="upper left")
     ax.grid(axis="y", linestyle="--", linewidth=0.5)
     ax.set_ylim(-150, 150)
 
@@ -250,6 +248,11 @@ if dfs:
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
 
     plt.tight_layout()
+    plt.savefig(
+        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\monthly_in_out_netto_flow.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.show()
 # %%
 # Stacked barplot showing percentage of inflows and outflows per month
@@ -308,28 +311,31 @@ if dfs:
 
     pivot_inflows_pct.plot(kind="bar", stacked=True, ax=ax1, alpha=0.8)
     ax1.set_ylabel("Percentage (%)")
-    ax1.set_title("Monthly Inflow Composition by Source (%)")
-    ax1.set_xlabel("Month")
+    ax1.set_title("Maandelijkse Instroom debiet per bron (%)")
+    ax1.set_xlabel("")
     ax1.legend(
-        title="Inflow Source", bbox_to_anchor=(1.05, 1), loc="upper left", reverse=True
+        title="Instroom Bron", bbox_to_anchor=(1.01, 1), loc="upper left", reverse=True
     )
     ax1.set_ylim(0, 100)
     ax1.tick_params(axis="x", rotation=45)
 
     pivot_outflows_pct.plot(kind="bar", stacked=True, ax=ax2, alpha=0.8)
     ax2.set_ylabel("Percentage (%)")
-    ax2.set_title("Monthly Outflow Composition by Source (%)")
-    ax2.set_xlabel("Month")
+    ax2.set_title("Maandelijkse Uitstroom debiet per bron (%)")
+    ax2.set_xlabel("")
     ax2.legend(
-        title="Outflow Source", bbox_to_anchor=(1.05, 1), loc="upper left", reverse=True
+        title="Uitstroom Bron", bbox_to_anchor=(1.01, 1), loc="upper left", reverse=True
     )
     ax2.set_ylim(0, 100)
     ax2.tick_params(axis="x", rotation=45)
 
     plt.tight_layout()
+    plt.savefig(
+        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\monthly_in_out_percentage.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.show()
-# %%
-result_df
 # %%
 # Plot daily max and min WAARDE per location (by day of year)
 if dfs:
@@ -447,6 +453,7 @@ if dfs:
             plt.show()
 # %%
 from io import BytesIO
+from pathlib import Path
 
 import contextily as ctx
 import geopandas as gpd
@@ -455,6 +462,10 @@ import numpy as np
 import pandas as pd
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image
+
+DATA_GIS_DIR = Path(
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\GIS"
+)
 
 # Yearly mean aggregation
 yearly_mean = (
@@ -469,9 +480,7 @@ yearly_dict: dict[str, np.ndarray] = {}
 for name, group in yearly_mean.groupby("NAME"):
     yearly_dict[name] = group.sort_values("year")
 
-locaties = gpd.read_file(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\locaties_debiet.gpkg"
-)
+locaties = gpd.read_file(DATA_GIS_DIR / "locaties_debiet.gpkg")
 locaties
 # %%
 # Reproject to Web Mercator
@@ -533,10 +542,10 @@ ctx.add_basemap(
 )
 
 ax.set_title("Debiet Locations")
-
+TODAY = pd.Timestamp.now().strftime("%Y%m%d")
 plt.tight_layout()
 plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\figures\debiet_locations_map_20260720.png",
+    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\debiet_locations_map_20260720.png",
     dpi=300,
 )
 plt.show()
@@ -973,4 +982,186 @@ if dfs:
 
     fig.write_html("interactive_flows.html")
     fig.show()
+
+# %%
+result_df["NAME"].unique()
+# %%
+# Plot WAARDE per DATUM for each FILE
+if dfs:
+    import matplotlib.pyplot as plt
+
+    # 1) List of locations to include (empty = all)
+    locations_to_include = [
+        "IJssel",
+        "Neerslag",
+        "Verdamping",
+        "Houtrib spuisluizen (Houtribdijk) aanvoer",
+        "Houtrib spuisluizen (Houtribdijk) afvoer",
+        "Krabbersgat spuisluizen (Houtribdijk) aanvoer",
+        "Krabbersgat spuisluizen (Houtribdijk) afvoer",
+        "Stevin spuisluizen (afsluitdijk)",
+        "Lorentz spuisluizen (Afsluitdijk)",
+        "Berging IJsselmeer",
+    ]
+
+    # Define NAMEs that are leaving (outflows)
+    outflows = [
+        "Verdamping",
+        "Stevin spuisluizen (afsluitdijk)",
+        "Lorentz spuisluizen (Afsluitdijk)",
+        "inlaten Noordoostpolder (som)",
+        "Krabbersgat spuisluizen (Houtribdijk) afvoer",
+        "Houtrib spuisluizen (Houtribdijk) afvoer",
+        "lek Spuisluizen (Afsluitdijk)",
+        "PWN & WRK III",
+        "inlaat Tacozijl (Friesland)",
+        "inlaat Teroelsterkolk (Friesland)",
+        "inlaat Hooglandgemaal (140)",
+        "inlaat Workum",
+        "Roggebotsluis",
+        "inlaten Noordoostpolder (som)",
+        "Zwarte Water afvoer",
+        "Inlaat Vier Noorder Koggen (Westfriesland)",
+    ]
+
+    output_dir = Path(
+        r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_20260803\figuren"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    files = result_df["NAME"].unique()
+    if locations_to_include:
+        files = [f for f in files if f in locations_to_include]
+
+    for file in files:
+        file_data = (
+            result_df[result_df["NAME"] == file]
+            .sort_values("DATUM")
+            .reset_index(drop=True)
+        )
+        fig, ax1 = plt.subplots(figsize=(10, 5))
+
+        if file == "Berging IJsselmeer":
+            ax1.plot(
+                file_data["DATUM"],
+                file_data["WAARDE"],
+                linewidth=0.5,
+                color="lightblue",
+                label="Waterhoogte",
+                zorder=1,
+            )
+
+            ax1.scatter(
+                file_data["DATUM"],
+                file_data["WAARDE"],
+                s=7,
+                color="tab:blue",
+                zorder=2,
+            )
+            ax1.set_title(
+                "Berging IJsselmeer m.b.v. gew. gem. waterhoogte van 4 locaties in cm t.o.v. NAP"
+            )
+            ax1.set_ylim(None, None)  # Let matplotlib auto-scale for Berging
+            ax1.set_ylabel("Waterhoogte in cm t.o.v. NAP")
+        else:
+            if file in outflows:
+                file_data["WAARDE"] = -file_data["WAARDE"]
+                ax1.plot(
+                    file_data["DATUM"],
+                    file_data["WAARDE"],
+                    linewidth=0.5,
+                    color="lightblue",
+                    label="Debiet",
+                    zorder=1,
+                )
+
+                ax1.scatter(
+                    file_data["DATUM"],
+                    file_data["WAARDE"],
+                    s=7,
+                    color="tab:blue",
+                    zorder=2,
+                )
+            else:
+                ax1.plot(
+                    file_data["DATUM"],
+                    file_data["WAARDE"],
+                    linewidth=0.5,
+                    color="lightblue",
+                    label="Debiet",
+                    zorder=1,
+                )
+
+                ax1.scatter(
+                    file_data["DATUM"],
+                    file_data["WAARDE"],
+                    s=7,
+                    color="tab:blue",
+                    zorder=2,
+                )
+
+            ax1.set_title(f"Debiet voor {file} IJsselmeer")
+            ax1.set_ylabel("Debiet in miljoen m³ per dag")
+            ax1.axhline(y=0, color="grey", linestyle="-", linewidth=1, alpha=0.7)
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(fontsize="small")
+        ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2027-01-01"))
+
+        plt.tight_layout()
+        safe_file = file.replace(" ", "_").replace("/", "-")
+        fig.savefig(
+            output_dir / f"debiet_{safe_file}.png", dpi=300, bbox_inches="tight"
+        )
+        plt.show()
+
+    # Plot sum of all other locations
+    other_locations = [
+        name for name in result_df["NAME"].unique() if name not in locations_to_include
+    ]
+    # print(f"Other locations to sum and plot: {other_locations}")
+    if other_locations:
+        # Create a copy and apply sign adjustment based on outflows
+        other_filtered = result_df[result_df["NAME"].isin(other_locations)].copy()
+        other_filtered["WAARDE_ADJUSTED"] = other_filtered.apply(
+            lambda row: -row["WAARDE"] if row["NAME"] in outflows else row["WAARDE"],
+            axis=1,
+        )
+
+        other_data = (
+            other_filtered.groupby("DATUM")["WAARDE_ADJUSTED"]
+            .sum()
+            .reset_index(name="WAARDE")
+            .sort_values("DATUM")
+        )
+
+        fig, ax1 = plt.subplots(figsize=(10, 5))
+        ax1.plot(
+            other_data["DATUM"],
+            other_data["WAARDE"],
+            linewidth=0.5,
+            color="lightblue",
+            label="Debiet",
+            zorder=1,
+        )
+        ax1.scatter(
+            other_data["DATUM"],
+            other_data["WAARDE"],
+            s=7,
+            color="tab:blue",
+            zorder=2,
+        )
+        ax1.set_title("Totale debiet IJsselmeer in - overige locaties (gesommeerd)")
+        ax1.set_ylabel("Debiet in miljoen m³ per dag")
+        ax1.axhline(y=0, color="grey", linestyle="-", linewidth=1, alpha=0.7)
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(fontsize="small")
+        ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2027-01-01"))
+
+        plt.tight_layout()
+        fig.savefig(
+            output_dir / "debiet_all_other_locations_summed.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.show()
 # %%
