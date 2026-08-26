@@ -74,7 +74,7 @@ locations_pl
 # %%
 # Read geopackage and find points within
 
-gpkg_path = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\IJSSELMEER5.gpkg"
+gpkg_path = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\GIS\IJSSELMEER_MARKERMEER.gpkg"
 
 # Read the geopackage
 gdf_boundary = gpd.read_file(gpkg_path)
@@ -110,35 +110,37 @@ print(unique_location_codes)
 bool_stations = locations.index.isin(
     [
         "andijk",
-        "broekerhaven.recreatiepark",
+        "vrouwezand",
+        "vrouwezand.meetpaal",
+        # "broekerhaven.recreatiepark",
         "denoever.ijsselmeer.binnenhaven",
         "denoever.ijsselmeer.stevinsluizen.zuid",
         "denoever.ijsselmeer.vaargeul",
         "denoever.spuisluis.binnen",
         "denoever.waddenzee.voorhaven.kolk",
         # 'doovebalg.oost',
-        "friesekust.ijsselmeer",
-        "ketelhaven.ketelmeer",
-        "kornwerd",
+        # "friesekust.ijsselmeer",
+        # "ketelhaven.ketelmeer",
+        # "kornwerd",
         "kornwerderzand.ijsselmeer.binnenhaven",
         "kornwerderzand.ijsselmeer.middelgronden",
         "kornwerderzand.ijsselmeer.spui",
         "kornwerderzand.ijsselmeer.spuihavenzuid",
         "kornwerderzand.ijsselmeer.vaargeul",
         "kornwerderzand.waddenzee.voorhaven.kolk",
-        "lelystad.houtribhoek",
-        "lemmer.teroelsterkolk.buiten",
-        "makkum.sluis.buiten",
-        "oosterdijk",
-        "oudezeug",
-        "ramsdiep",
-        "rotterdamsehoek",
-        "rotterdamsehoek.ijsselmeer",
-        "stavoren.gemaalhoogland.buiten",
-        "steilebank",
-        "vrouwezand",
-        "vrouwezand.meetpaal",
-        "wieringen.ijsselmeer.oost",
+        "amsterdam.schellingwouderbrug",
+        "deblocqvankuffeler.hogevaart",
+        # "lelystad.houtribhoek",
+        # "lemmer.teroelsterkolk.buiten",
+        # "makkum.sluis.buiten",
+        # "oosterdijk",
+        # "oudezeug",
+        # "ramsdiep",
+        # "rotterdamsehoek",
+        # "rotterdamsehoek.ijsselmeer",
+        # "stavoren.gemaalhoogland.buiten",
+        # "steilebank",
+        # "wieringen.ijsselmeer.oost",
     ]
 )
 
@@ -149,9 +151,7 @@ bool_parameter_CL = locations["Parameter.Code"].isin(["Cl"])
 bool_parameter_SAL = locations["Parameter.Code"].isin(["NVT"])
 
 selected = locations.loc[
-    bool_stations
-    & bool_procestype
-    & (bool_grootheid_CONC & bool_parameter_CL)
+    bool_stations & bool_procestype & (bool_grootheid_CONC & bool_parameter_CL)
     # | (bool_grootheid_SAL & bool_parameter_SAL)
 ]
 selected
@@ -334,10 +334,17 @@ measurements = (
         missing_columns="insert",
     )
     .filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50)
-    .collect()
+    .collect(engine="streaming")
 )
 measurements
 # %%
+# Inspect raw Bemonsteringshoogte values before conversion
+print(
+    measurements.select("WaarnemingMetadata.Bemonsteringshoogte")
+    .unique()
+    .sort("WaarnemingMetadata.Bemonsteringshoogte")
+)
+
 # Convert bodemhoogte from string to int
 measurements = measurements.with_columns(
     pl.col("WaarnemingMetadata.Bemonsteringshoogte")
@@ -353,11 +360,20 @@ measurements = measurements.with_columns(
     .alias("WaarnemingMetadata.Bemonsteringshoogte")
 )
 
-measurements = measurements.filter(
-    pl.col("WaarnemingMetadata.Kwaliteitswaardecode")
-    .is_in(["00", "25"])
-    .alias("WaarnemingMetadata.Kwaliteitswaardecode")
+# Show the distinct converted heights so different depths are visible
+print(
+    measurements.select("WaarnemingMetadata.Bemonsteringshoogte")
+    .unique()
+    .sort("WaarnemingMetadata.Bemonsteringshoogte")
 )
+measurements
+# %%
+
+# measurements = measurements.filter(
+#     pl.col("WaarnemingMetadata.Kwaliteitswaardecode")
+#     .is_in(["00", "25"])
+#     .alias("WaarnemingMetadata.Kwaliteitswaardecode")
+# )
 
 measurements.shape
 # %%
@@ -467,10 +483,10 @@ overview_with_range = overview_with_range.select(
     ["Naam", "Grootheid.Code", "Eenheid.Code", "WaarnemingMetadata.Bemonsteringshoogte"]
 )
 
-overview_with_range.write_excel(
-    DATA_OUTPUT_DIR / "overzicht_saliniteit_per_station_parameter.xlsx",
-)
-
+# overview_with_range.write_excel(
+#     DATA_OUTPUT_DIR / "overzicht_saliniteit_per_station_parameter.xlsx",
+# )
+overview_with_range["Naam"].to_list()
 # %%
 output_dir = Path(
     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\2_external\measurements_RWS_saliniteit_per_combo"
@@ -566,39 +582,77 @@ percentile_stats = (
 )
 percentile_stats
 # %%
+measurements_daily
+# %%
 # Plot all
+
+import matplotlib as mpl
 
 unique_combinations = (
     measurements_daily.select(["Naam", "Grootheid.Code", "Eenheid.Code"])
     .unique()
     .sort(["Naam", "Grootheid.Code", "Eenheid.Code"])
 )
-naam_list = measurements_daily.select("Naam").unique().sort("Naam")["Naam"].to_list()
+# naam_list = measurements_daily.select("Naam").unique().sort("Naam")["Naam"].to_list()
+# List of names to include
+naam_list = [
+    "Amsterdam, Schellingwouderbrug",
+    "Andijk",
+    # 'Broekerhaven, recreatiepark',
+    "Den Oever IJsselmeer Vaargeul",
+    "Den Oever Stevinsluizen zuid",
+    "Den Oever, IJsselmeer binnenhaven",
+    "Den Oever, Waddenzee voorhaven kolk",
+    "Den Oever, spuisluis, binnen",
+    # 'Friesekust IJsselmeer',
+    # 'Kornwerd',
+    "Kornwerderzand IJsselmeer Middelgronden",
+    "Kornwerderzand IJsselmeer spui",
+    "Kornwerderzand IJsselmeer vaargeul",
+    "Kornwerderzand Spuihaven zuid",
+    "Kornwerderzand, IJsselmeer binnenhaven",
+    "Kornwerderzand, Waddenzee voorhaven kolk",
+    # 'Lelystad, Houtribhoek',
+    # 'Lemmer Teroelsterkolk buiten',
+    # 'Makkum sluis buiten',
+    # "deblocqvankuffeler.hogevaart",
+    # 'Oosterdijk',
+    # 'Oude Zeug',
+    # 'Ramsdiep',
+    # 'Rotterdamse Hoek',
+    # 'Rotterdamsehoek IJsselmeer',
+    # 'Stavoren gemaal Hoogland buiten',
+    # 'Steile Bank',
+    "Vrouwezand",
+    "Vrouwezand, meetpaal",
+    # 'Wieringen IJsselmeer oost'
+]
+
 grootheid_list = (
     measurements_daily.select("Grootheid.Code")
     .unique()
     .sort("Grootheid.Code")["Grootheid.Code"]
     .to_list()
 )
-num_rows = len(naam_list)
-num_cols = len(grootheid_list)
-fig, axes = plt.subplots(
-    num_rows, num_cols, figsize=(16, 4 * num_rows), sharex=False, sharey=False
-)
-if num_rows == 1 and num_cols == 1:
-    axes = [[axes]]
-elif num_rows == 1:
-    axes = [axes]
-elif num_cols == 1:
-    axes = [[ax] for ax in axes]
 
-for naam_idx, naam in enumerate(naam_list):
+# Plot each location individually
+for naam in naam_list:
+    num_cols = len(grootheid_list)
+    fig, axes = plt.subplots(1, num_cols, figsize=(10, 5), sharex=False, sharey=False)
+
+    if num_cols == 1:
+        axes = [axes]
+    else:
+        axes = list(np.atleast_1d(axes).ravel())
+
     for col_idx, grootheid in enumerate(grootheid_list):
         filtered = measurements_daily.filter(
-            (pl.col("Naam") == naam) & (pl.col("Grootheid.Code") == grootheid)
+            (pl.col("Naam") == naam)
+            & (pl.col("Grootheid.Code") == grootheid)
+            & (pl.col("time") > dt.date(2017, 12, 31))
         ).sort("time")
 
-        ax = axes[naam_idx][col_idx]
+        ax = axes[col_idx]
         if len(filtered) > 0:
             # Get unique sampling heights and assign colors
             unique_heights = (
@@ -622,12 +676,52 @@ for naam_idx, naam in enumerate(naam_list):
                     pl.col("WaarnemingMetadata.Bemonsteringshoogte") == height
                 ).sort("time")
                 if len(height_data) > 0:
+                    line_color = (
+                        "#132D6B"
+                        if len(unique_heights) == 1
+                        else height_color_map[height]
+                    )
+
+                    times = height_data["time"].to_list()
+                    values = height_data["Meetwaarde.Waarde_Numeriek"].to_list()
+
+                    # Reindex to a continuous daily range so missing dates create
+                    # gaps (NaN) in the solid line
+                    full_range = pl.date_range(
+                        height_data["time"].min(),
+                        height_data["time"].max(),
+                        interval="1d",
+                        eager=True,
+                    )
+                    reindexed = (
+                        pl.DataFrame({"time": full_range})
+                        .join(
+                            height_data.select(["time", "Meetwaarde.Waarde_Numeriek"]),
+                            on="time",
+                            how="left",
+                        )
+                        .sort("time")
+                    )
+                    full_times = reindexed["time"].to_list()
+                    full_values = reindexed["Meetwaarde.Waarde_Numeriek"].to_list()
+
+                    # Dotted bridging line connecting across gaps
+                    # ax.plot(
+                    #     times,
+                    #     values,
+                    #     linewidth=0.6,
+                    #     linestyle=":",
+                    #     color=line_color,
+                    #     alpha=0.6,
+                    # )
+                    # Solid line with gaps where data is missing
+
                     ax.plot(
-                        height_data["time"],
-                        height_data["Meetwaarde.Waarde_Numeriek"],
-                        linewidth=0.5,
+                        full_times,
+                        full_values,
+                        linewidth=0.8,
                         label=f"Height: {height}",
-                        color=height_color_map[height],
+                        color=line_color,
                     )
 
             eenheid = (
@@ -635,28 +729,245 @@ for naam_idx, naam in enumerate(naam_list):
                 if len(filtered) > 0
                 else ""
             )
-            ax.set_title(f"{grootheid} for {naam}")
-            ax.set_ylabel(f"{grootheid} [{eenheid}]")
-            # ax.set_xlim(dt.datetime(2017, 12, 31), dt.datetime(2026, 4, 1))
-            ax.set_xlim(dt.datetime(2009, 12, 31), dt.datetime(2026, 4, 1))
-            ax.axvspan(
-                dt.datetime(2018, 1, 1),
-                dt.datetime(2026, 1, 1),
-                alpha=0.2,
-                color="grey",
-            )
-            ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
+            ax.set_title(f"{naam} - Chloride concentratie")
+            ax.set_ylabel(f"Concentratie {eenheid}")
 
-plt.tight_layout()
-plt.savefig(
-    DATA_OUTPUT_DIR
-    / "figuren"
-    / "saliniteit"
-    / "time_series_daily_mean_meetwaarde_per_station.png",
-    dpi=300,
-)
-plt.show()
+            ax.yaxis.set_major_formatter(
+                mpl.ticker.FuncFormatter(lambda x, _: f"{x:,.0f}")
+            )
+
+            # Set y-axis limit based on data values (ignore threshold lines)
+            data_max = filtered["Meetwaarde.Waarde_Numeriek"].max()
+            y_top = data_max * 1.25 if data_max is not None and data_max > 0 else 1.0
+
+            # Define flow categories for colored threshold lines
+            flow_categories = [
+                {
+                    "ymin": 16_500,
+                    "ymax": 100_000,
+                    "color": "#0F0F0D",
+                    "va": "bottom",
+                    "ls": "-.",
+                    "lw": 1.5,
+                    "label": "zout",
+                },
+                {
+                    "ymin": 10_000,
+                    "ymax": 16_500,
+                    "color": "#161947",
+                    "va": "bottom",
+                    "ls": "-.",
+                    "lw": 1.5,
+                    "label": "Sterk brak tot zout",
+                },
+                {
+                    "ymin": 3000,
+                    "ymax": 10_000,
+                    "color": "#1B4F9C",
+                    "va": "bottom",
+                    "ls": "-.",
+                    "lw": 1,
+                    "label": "Brak",
+                },
+                {
+                    "ymin": 1000,
+                    "ymax": 3000,
+                    "color": "#4FA3D1",
+                    "va": "bottom",
+                    "ls": "-.",
+                    "lw": 1,
+                    "label": "Zwak brak",
+                },
+                {
+                    "ymin": 300,
+                    "ymax": 1000,
+                    "color": "#7FD4E8",
+                    "va": "bottom",
+                    "ls": "--",
+                    "lw": 1.5,
+                    "label": "Licht brak",
+                },
+                {
+                    "ymin": 150,
+                    "ymax": 300,
+                    "color": "#A7DC14",
+                    "va": "bottom",
+                    "ls": "--",
+                    "lw": 1.5,
+                    "label": "Matig zoet",
+                },
+                {
+                    "ymin": 0,
+                    "ymax": 150,
+                    "color": "#1B7F1B",
+                    "va": "bottom",
+                    "ls": "--",
+                    "lw": 1,
+                    "label": "Zoet",
+                },
+            ]
+
+            # Set y-axis lower limit based on data value. If the data min is above
+            # 1000, only show relevant categories by starting the axis at the
+            # highest category threshold that is still below the data min.
+            data_min = filtered["Meetwaarde.Waarde_Numeriek"].min()
+            y_bottom = 0.0
+            if data_min is not None and data_min > 1000:
+                thresholds_below = [
+                    cat["ymin"] for cat in flow_categories if cat["ymin"] < data_min
+                ]
+                if thresholds_below:
+                    y_bottom = (
+                        max(thresholds_below) * 0.98
+                    )  # Slightly below the highest threshold
+            ax.set_ylim(y_bottom, y_top)
+
+            for category in flow_categories:
+                # Skip thresholds that fall outside the data-based y range
+                if category["ymin"] > y_top or category["ymin"] < y_bottom:
+                    continue
+                ax.axhline(
+                    category["ymin"],
+                    color=category["color"],
+                    alpha=0.45,
+                    linestyle=category["ls"],
+                    linewidth=category["lw"],
+                    zorder=-10,
+                )
+                label_text = category.get("label", category.get("name", ""))
+                if label_text:
+                    # Always print the label just above the threshold line, with
+                    # an offset that scales with the visible y range so it stays
+                    # meaningful regardless of the axis limits (including when
+                    # y_bottom > 1000).
+                    offset = (y_top - y_bottom) * 0.02
+                    y_pos = category["ymin"] + offset
+                    # Skip labels that would fall outside the data-based y range
+                    if y_pos > y_top or y_pos < y_bottom:
+                        continue
+                    ax.text(
+                        0.01,
+                        y_pos,
+                        label_text,
+                        transform=ax.get_yaxis_transform(),
+                        va="bottom",
+                        ha="left",
+                        fontsize=9,
+                        color=category["color"],
+                        zorder=2,
+                        bbox=dict(
+                            boxstyle="round,pad=0.3",
+                            facecolor="white",
+                            edgecolor=category["color"],
+                            alpha=0.8,
+                        ),
+                    )
+
+            _full_data = (
+                measurements_daily.filter(pl.col("Naam") == naam)
+                .select(["time", "Meetwaarde.Waarde_Numeriek"])
+                .to_pandas()
+            )
+            _valid_dates = _full_data.loc[
+                _full_data["Meetwaarde.Waarde_Numeriek"].notna(), "time"
+            ]
+            _min_date = _valid_dates.min()
+            _max_date = _valid_dates.max()
+            _min_str = _min_date.strftime("%d-%m-%Y") if pd.notna(_min_date) else "?"
+            _max_str = _max_date.strftime("%d-%m-%Y") if pd.notna(_max_date) else "?"
+
+            ax.text(
+                0.99,
+                0.99,
+                f"Data: {_min_str} t/m {_max_str} | Deltares | {TODAY}",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=7,
+                color="grey",
+                alpha=0.7,
+            )
+
+            # # Shade every other year
+            # if len(filtered) > 0:
+            #     min_year = filtered["time"].min().year
+            #     max_year = filtered["time"].max().year
+            #     for year in range(min_year, max_year + 1):
+            #         if year % 2 == 0:
+            #             ax.axvspan(
+            #                 dt.datetime(year, 1, 1),
+            #                 dt.datetime(year + 1, 1, 1),
+            #                 color="grey",
+            #                 alpha=0.1,
+            #             )
+
+            ax.set_xlim(dt.datetime(2017, 4, 30), dt.datetime(2026, 4, 1))
+            xlim_min = dt.datetime(2017, 4, 30)
+            xlim_max = dt.datetime(2023, 1, 1)
+            ax.set_xlim(xlim_min, xlim_max)
+
+            # Check if no data within xlim but data after xlim_max
+            data_in_xlim = measurements_daily.filter(
+                (pl.col("time") >= xlim_min) & (pl.col("time") <= xlim_max)
+            )
+            data_after_xlim = measurements_daily.filter(pl.col("time") > xlim_max)
+            if len(data_in_xlim) == 0 and len(data_after_xlim) > 0:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Data available after 2023",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    fontsize=18,
+                    color="grey",
+                    alpha=0.5,
+                )
+
+            # ax.axvspan(
+            #     dt.datetime(2018, 1, 1),
+            #     dt.datetime(2026, 1, 1),
+            #     alpha=0.2,
+            #     color="grey",
+            # )
+
+            ax.legend(
+                fontsize=12,
+                loc="upper left",
+                title="Diepte (m NAP)",
+                title_fontsize=14,
+                bbox_to_anchor=(1.0, 1.0),
+            )
+        ax.grid(True, alpha=0.25)
+
+    plt.tight_layout()
+    # Save individual plot
+    TODAY = "20260824"
+    file_clean = (
+        naam.replace(" ", "_")
+        .replace("/", "-")
+        .replace(",", "_")
+        .replace("(", "_")
+        .replace(")", "_")
+        .replace(":", "_")
+        .replace(";", "_")
+        .replace(".", "_")
+        .replace("-", "_")
+    )
+    file_clean = file_clean.replace("__", "_")
+    fig_name_clean = f"WADAR_chloride_{file_clean}_{TODAY}.png"
+    fig_name_clean = fig_name_clean.replace("__", "_")
+    output_dir = Path(
+        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\saliniteit"
+    )
+    output_path = output_dir / fig_name_clean
+    print(f"Saving figure to: {output_path}")
+    plt.savefig(
+        output_path,
+        dpi=300,
+    )
+    plt.show()
+    plt.close()
 
 # %%
 measurements_daily

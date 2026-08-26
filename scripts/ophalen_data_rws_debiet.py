@@ -469,29 +469,30 @@ for idx, row in enumerate(group_keys.iter_rows(named=True)):
     )
     ax1.grid(True, alpha=0.3)
 
-    # Plot cumulative on secondary axis
-    ax2 = ax1.twinx()
-    ax2.plot(
-        cumulative["time"],
-        cumulative["Cumulative"],
-        linewidth=0.5,
-        color="green",
-        label="Cumulative",
-    )
-    ax2.set_ylabel("Cumulative (m³)", color="green")
-    ax2.tick_params(axis="y", labelcolor="green")
-    ax2.set_ylim(ax1.get_ylim()[0], None)
+    # # Plot cumulative on secondary axis
+    # ax2 = ax1.twinx()
+    # ax2.plot(
+    #     cumulative["time"],
+    #     cumulative["Cumulative"],
+    #     linewidth=0.5,
+    #     color="green",
+    #     label="Cumulative",
+    # )
+    # ax2.set_ylabel("Cumulative (m³)", color="green")
+    # ax2.tick_params(axis="y", labelcolor="green")
+    # ax2.set_ylim(ax1.get_ylim()[0], None)
 
 plt.tight_layout()
-plt.savefig(
-    DATA_OUTPUT_FIG_DIR / "debiet_and_cumulative_per_station.png",
-    dpi=300,
-    bbox_inches="tight",
-)
+# plt.savefig(
+#     DATA_OUTPUT_FIG_DIR / "debiet_and_cumulative_per_station.png",
+#     dpi=300,
+#     bbox_inches="tight",
+# )
 plt.show()
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
 
+sns.reset_defaults()
 sns.set_style("whitegrid")
 colors = plt.cm.plasma(np.linspace(0.3, 1, 35))
 
@@ -542,11 +543,11 @@ for idx, naam in enumerate(unique_names):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig(
-    DATA_OUTPUT_FIG_DIR / "monthly_median_per_year.png",
-    dpi=300,
-    bbox_inches="tight",
-)
+# plt.savefig(
+#     DATA_OUTPUT_FIG_DIR / "monthly_median_per_year.png",
+#     dpi=300,
+#     bbox_inches="tight",
+# )
 plt.show()
 # %%
 # Plot showing 1 year with each year colored differently (using monthly means)
@@ -627,11 +628,11 @@ for idx, naam in enumerate(unique_names):
     axes[idx].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig(
-    DATA_OUTPUT_FIG_DIR / "monthly_median_with_ci_per_year.png",
-    dpi=300,
-    bbox_inches="tight",
-)
+# plt.savefig(
+#     DATA_OUTPUT_FIG_DIR / "monthly_median_with_ci_per_year.png",
+#     dpi=300,
+#     bbox_inches="tight",
+# )
 plt.show()
 # %%
 # Plot static map
@@ -718,11 +719,11 @@ add_basemap(
 ax.set_xlabel("Lengtegraad")
 ax.set_ylabel("Breedtegraad")
 plt.title("Debiet Meetlocaties (OpenStreetMap)")
-plt.savefig(
-    DATA_OUTPUT_FIG_DIR / "debiet_locations_map.png",
-    dpi=300,
-    bbox_inches="tight",
-)
+# plt.savefig(
+#     DATA_OUTPUT_FIG_DIR / "debiet_locations_map.png",
+#     dpi=300,
+#     bbox_inches="tight",
+# )
 plt.show()
 # %%
 # Plot interactive map with leaflet (folium)
@@ -786,7 +787,7 @@ legend_html = """
 </div>
 """
 # Save interactive map
-m.save(DATA_OUTPUT_FIG_DIR / "interactive_map_debiet_locations.html")
+# m.save(DATA_OUTPUT_FIG_DIR / "interactive_map_debiet_locations.html")
 print(
     f"Interactive map saved to: {DATA_OUTPUT_FIG_DIR / 'interactive_map_debiet_locations.html'}"
 )
@@ -872,11 +873,11 @@ for file in files:
     )
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(
-        DATA_OUTPUT_FIG_DIR / f"daily_min_max_debiet_{file.replace(' ', '_')}.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
+    # plt.savefig(
+    #     DATA_OUTPUT_FIG_DIR / f"daily_min_max_debiet_{file.replace(' ', '_')}.png",
+    #     dpi=300,
+    #     bbox_inches="tight",
+    # )
     plt.show()
 # %%
 measurements_daily["Naam"].unique()
@@ -959,10 +960,342 @@ for row in group_keys.iter_rows(named=True):
     plt.tight_layout()
     safe_naam = naam.replace(" ", "_").replace("/", "-")
     safe_param = param.replace(" ", "_").replace("/", "-")
-    plt.savefig(
-        DATA_OUTPUT_FIG_DIR / f"debiet_{safe_naam}_{safe_param}_{TODAY}.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
+    # plt.savefig(
+    #     DATA_OUTPUT_FIG_DIR / f"debiet_{safe_naam}_{safe_param}_{TODAY}.png",
+    #     dpi=300,
+    #     bbox_inches="tight",
+    # )
     plt.show()
+# %%
+# PLot all
+
+group_keys = measurements_daily.select(["Naam"]).unique().sort(["Naam"])
+num_plots = len(group_keys)
+fig, axes = plt.subplots(num_plots, 1, figsize=(16, 4 * num_plots), sharex=False)
+if num_plots == 1:
+    axes = [axes]
+
+for idx, row in enumerate(group_keys.iter_rows(named=True)):
+    naam = row["Naam"]
+    filtered = measurements_daily.filter((pl.col("Naam") == naam)).sort("time")
+
+    # Plot discharge on primary axis
+    ax1 = axes[idx]
+    ax1.plot(
+        filtered["time"],
+        filtered["Meetwaarde.Waarde_Numeriek"],
+        linewidth=0.5,
+        label="Debiet",
+    )
+    ax1.axhline(y=0, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
+    ax1.set_title(f"Debiet voor {naam}\n{param}")
+    ax1.set_ylabel(f"Debiet ({eenheid})")
+    ax1.set_xlim(dt.datetime(1989, 12, 31), dt.datetime(2026, 4, 1))
+    ax1.axvspan(
+        dt.datetime(2018, 1, 1), dt.datetime(2027, 1, 1), alpha=0.2, color="grey"
+    )
+    ax1.grid(True, alpha=0.3)
+
+    # # Plot cumulative on secondary axis
+    # ax2 = ax1.twinx()
+    # ax2.plot(
+    #     cumulative["time"],
+    #     cumulative["Cumulative"],
+    #     linewidth=0.5,
+    #     color="green",
+    #     label="Cumulative",
+    # )
+    # ax2.set_ylabel("Cumulative (m³)", color="green")
+    # ax2.tick_params(axis="y", labelcolor="green")
+    # ax2.set_ylim(ax1.get_ylim()[0], None)
+
+plt.tight_layout()
+# plt.savefig(
+#     DATA_OUTPUT_FIG_DIR / "debiet_and_cumulative_per_station.png",
+#     dpi=300,
+#     bbox_inches="tight",
+# )
+plt.show()
+
+# %%
+sns.reset_defaults()
+# Plot Meetwaarde.Waarde_Numeriek per time for each Naam
+if measurements_daily is not None and len(measurements_daily) > 0:
+    import matplotlib.pyplot as plt
+
+    # 1) List of locations to include (empty = all)
+    locations_to_include = [
+        "olst",
+        # "Neerslag",
+        # "Verdamping",
+        "lelystad.houtribsluis.noord",
+        # "Houtrib spuisluizen (Houtribdijk) afvoer",
+        "krabbersgat.ijsselmeer",
+        # "Krabbersgat spuisluizen (Houtribdijk) afvoer",
+        "denoever.waddenzee.voorhaven",
+        "kornwerderzand.waddenzee.buitenhaven",
+        # "Berging IJsselmeer",
+    ]
+
+    # Define NAMEs that are leaving (outflows)
+    outflows = [
+        # "lelystad.houtribsluis.noord",
+        # "krabbersgat.ijsselmeer",
+        # "denoever.waddenzee.voorhaven",
+        # "kornwerderzand.waddenzee.buitenhaven",
+    ]
+
+    output_dir = Path(
+        r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_20260803\figuren"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Define flow categories for colored spans (only relevant for IJssel)
+    flow_categories = [
+        # {"ymin": 1150, "ymax": float("inf"), "color": "#E59621", "va": "bottom", "alpha": 0.25, "label": "Hoge afvoer (>1150)"},
+        {
+            "ymin": 740,
+            "ymax": 1150,
+            "color": "#DCC814",
+            "va": "bottom",
+            "alpha": 0.45,
+            "label": "Verhoogde afvoer",
+        },
+        {
+            "ymin": 640,
+            "ymax": 740,
+            "color": "#B1FF3B",
+            "va": "bottom",
+            "alpha": 0.45,
+            "label": "Licht verhoogd",
+        },
+        {
+            "ymin": 165,
+            "ymax": 640,
+            "color": "#1B7F1B",
+            "va": "bottom",
+            "alpha": 0.45,
+            "label": "Normale afvoer",
+        },
+        {
+            "ymin": 0,
+            "ymax": 165,
+            "color": "#966921",
+            "va": "top",
+            "alpha": 0.45,
+            "label": "Verlaagde afvoer",
+        },
+    ]
+
+    # Define custom titles per NAME
+    custom_titles = {
+        "olst": "IJssel afvoer bij Olst per dag",
+        # "Neerslag": "Neerslag op dagbasis",
+        # "Verdamping": "Verdamping op dagbasis",
+        "lelystad.houtribsluis.noord": "Spuidebiet Houtribsluizen per dag (positief = richting IJsselmeer, negatief = richting Markermeer)",
+        # "Houtrib spuisluizen (Houtribdijk) afvoer": "Spuidebiet Houtribsluizen per dag (richting Markermeer)",
+        "krabbersgat.ijsselmeer": "Spuidebiet Krabbersgatsluizen per dag (positief = richting IJsselmeer, negatief = richting Markermeer)",
+        # "Krabbersgat spuisluizen (Houtribdijk) afvoer": "Spuidebiet Krabbersgatsluizen per dag (richting Markermeer)",
+        "denoever.waddenzee.voorhaven": "Spuidebiet Stevinsluizen per dag (richting Waddenzee)",
+        "kornwerderzand.waddenzee.buitenhaven": "Spuidebiet Lorentzsluizen per dag (richting Waddenzee)",
+        # "Berging IJsselmeer": "Berging IJsselmeer\nm.b.v. gew. gem. waterhoogte van 4 locaties in cm t.o.v. NAP",
+    }
+
+    files = measurements_daily["Code"].unique()
+
+    measurements_daily_filt = measurements_daily.filter(
+        pl.col("time") > pd.Timestamp("2018-01-01")
+    )
+
+    if locations_to_include:
+        files = [f for f in files if f in locations_to_include]
+
+    for file in files:
+        print(f"Plotting {file}...")
+        file_data = (
+            measurements_daily_filt.filter(pl.col("Code") == file)
+            .sort("time")
+            .to_pandas()
+            .reset_index(drop=True)
+        )
+        print(f"Data for {file}: {file_data.shape[0]} rows")
+
+        # Detect gaps in the daily time series. Where consecutive samples are
+        # more than one day apart, insert a NaN so the solid line breaks, and
+        # draw a dotted line to bridge those gaps.
+        file_data = file_data.sort_values("time").reset_index(drop=True)
+        time_diff = file_data["time"].diff()
+        gap_mask = time_diff > pd.Timedelta(days=1)
+        gap_idx = file_data.index[gap_mask].tolist()
+
+        fig, ax1 = plt.subplots(figsize=(10, 5))
+
+        # Check whether any data is available in the plotted period
+        period_mask = (file_data["time"] >= pd.Timestamp("2018-01-01")) & (
+            file_data["time"] < pd.Timestamp("2023-01-01")
+        )
+        has_data_in_period = (
+            file_data.loc[period_mask, "Meetwaarde.Waarde_Numeriek"].notna().any()
+        )
+
+        if not has_data_in_period:
+            ax1.text(
+                0.5,
+                0.55,
+                "Geen data beschikbaar in deze periode",
+                transform=ax1.transAxes,
+                va="center",
+                ha="center",
+                fontsize=12,
+                color="grey",
+                zorder=5,
+            )
+
+        # Apply flow category spans only for IJssel
+        for category in flow_categories if file == "olst" else []:
+            ax1.axhline(
+                category["ymin"],
+                color=category["color"],
+                alpha=category["alpha"],
+                linestyle="--",
+                linewidth=1.5,
+            )
+            label_text = category.get("label", category.get("name", ""))
+            if label_text:
+                # Anchor y at the edge matching the vertical alignment so
+                # va="top"/"bottom" is meaningful (midpoint makes va a no-op,
+                # and ymax=inf would push the label off-screen).
+                if category["va"] == "top":
+                    y_pos = category["ymax"] - 20
+                elif category["va"] == "bottom":
+                    y_pos = category["ymin"] + 20
+                else:
+                    y_pos = category["ymin"]
+                ax1.text(
+                    0.01,
+                    y_pos,
+                    label_text,
+                    transform=ax1.get_yaxis_transform(),
+                    va=category["va"],
+                    ha="left",
+                    fontsize=9,
+                    color=category["color"],
+                    zorder=2,
+                    bbox=dict(
+                        boxstyle="round,pad=0.3",
+                        facecolor="white",
+                        edgecolor=category["color"],
+                        alpha=0.8,
+                    ),
+                )
+
+        if file in outflows:
+            file_data["Meetwaarde.Waarde_Numeriek"] = -file_data[
+                "Meetwaarde.Waarde_Numeriek"
+            ]
+
+        # Build a series with NaN inserted at gaps so the solid line breaks
+        # where days are missing.
+        y_values = file_data["Meetwaarde.Waarde_Numeriek"].copy()
+        y_broken = y_values.copy().astype(float)
+        y_broken.loc[gap_idx] = np.nan
+
+        # Draw dotted bridges across the gaps first (behind the solid line).
+        for idx in gap_idx:
+            pos = file_data.index.get_loc(idx)
+            if pos == 0:
+                continue
+            prev_idx = file_data.index[pos - 1]
+            ax1.plot(
+                [file_data.loc[prev_idx, "time"], file_data.loc[idx, "time"]],
+                [y_values.loc[prev_idx], y_values.loc[idx]],
+                linewidth=0.8,
+                color="#005A9C",
+                linestyle=":",
+                zorder=1,
+            )
+
+        ax1.plot(
+            file_data["time"],
+            y_broken,
+            linewidth=0.8,
+            color="#005A9C",
+            label="Debiet",
+            zorder=1,
+        )
+
+        ax1.set_title(custom_titles.get(file, f"Debiet voor {file} IJsselmeer"))
+        ax1.set_ylabel("Debiet in m³/s")
+        ax1.axhline(y=0, color="grey", linestyle="-", linewidth=1, alpha=0.7)
+        ax1.grid(True, alpha=0.25)
+        if file == "olst":
+            ax1.set_ylim(
+                0,
+                file_data.loc[
+                    (file_data["time"] >= pd.Timestamp("2018-01-01"))
+                    & (file_data["time"] < pd.Timestamp("2023-01-01")),
+                    "Meetwaarde.Waarde_Numeriek",
+                ].max()
+                * 1.1,
+            )
+            ax1.set_xlim(pd.Timestamp("2017-2-01"), pd.Timestamp("2023-01-01"))
+        else:
+            mask = (file_data["time"] >= pd.Timestamp("2018-01-01")) & (
+                file_data["time"] < pd.Timestamp("2023-01-01")
+            )
+            y_min = file_data.loc[mask, "Meetwaarde.Waarde_Numeriek"].min()
+            y_max = file_data.loc[mask, "Meetwaarde.Waarde_Numeriek"].max()
+            if np.isfinite(y_min) and np.isfinite(y_max):
+                y_pad = (y_max - y_min) * 0.1
+                ax1.set_ylim(y_min - y_pad, y_max + y_pad)
+            ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2023-01-01"))
+        ax1.ticklabel_format(style="plain", axis="y")
+
+        _full_data = (
+            measurements_daily.filter(pl.col("Code") == file)
+            .select(["time", "Meetwaarde.Waarde_Numeriek"])
+            .to_pandas()
+        )
+        _valid_dates = _full_data.loc[
+            _full_data["Meetwaarde.Waarde_Numeriek"].notna(), "time"
+        ]
+        _min_date = _valid_dates.min()
+        _max_date = _valid_dates.max()
+        _min_str = _min_date.strftime("%d-%m-%Y") if pd.notna(_min_date) else "?"
+        _max_str = _max_date.strftime("%d-%m-%Y") if pd.notna(_max_date) else "?"
+        ax1.text(
+            0.99,
+            0.01,
+            f"Data: {_min_str} t/m {_max_str} | WADAR | Deltares | {TODAY}",
+            transform=ax1.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=7,
+            color="grey",
+            alpha=0.7,
+        )
+
+        plt.tight_layout()
+        file_clean = (
+            file.replace(" ", "_")
+            .replace("/", "-")
+            .replace(",", "_")
+            .replace("(", "_")
+            .replace(")", "_")
+            .replace(":", "_")
+            .replace(";", "_")
+            .replace(".", "_")
+            .replace("-", "_")
+        )
+        file_clean = file_clean.replace("__", "_")
+        fig_name_clean = f"WADAR_debiet_{file_clean}_{TODAY}.png"
+        fig_name_clean = fig_name_clean.replace("__", "_")
+        output_dir = Path(
+            rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet"
+        )
+        output_path = output_dir / fig_name_clean
+        print(f"Saving figure to: {output_path}")
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        print(f"Saved plot for {file} to {output_path}")
+        plt.show()
 # %%

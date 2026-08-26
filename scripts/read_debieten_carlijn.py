@@ -32,6 +32,12 @@ for file in ymr_files:
                 )
                 df.columns = df.columns.str.replace("*", "", regex=False)
                 df["WAARDE"] = pd.to_numeric(df["WAARDE"], errors="coerce")
+                # Convert from million m3/d to m3/s: (million m3/d) * 1e6 / 86400
+                if first_line != "Berging IJsselmeer":
+                    df["WAARDE"] = df["WAARDE"] * 1e6 / 86400
+                    df["UNIT"] = "m³/s"
+                else:
+                    df["UNIT"] = "million m³"
                 df["DATUM"] = pd.to_datetime(df["DATUM"], format="%Y%m%d")
                 df = df[df["DATUM"] > pd.to_datetime("2018-01-01")]
                 df["NAME"] = first_line
@@ -47,12 +53,17 @@ if dfs:
     print(f"\nCombined dataframe shape: {result_df.shape}")
     print(result_df.head())
 
+    # Print min and max years
+    min_year = result_df["DATUM"].dt.year.min()
+    max_year = result_df["DATUM"].dt.year.max()
+    print(f"\nData year range: {min_year} - {max_year}")
+
     # Optional: Save to CSV
     result_df.to_parquet(
-        "P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\debieten_carlijn_2018_2022.parquet",
+        f"P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\debieten_carlijn_{min_year}_{max_year}.parquet",
         index=False,
     )
-    print("\nSaved to debieten_carlijn_2018_2022.parquet")
+    print(f"\nSaved to debieten_carlijn_{min_year}_{max_year}.parquet")
 else:
     print("No files were loaded successfully")
 
@@ -86,7 +97,7 @@ if dfs:
             label="Daily",
         )
         ax1.set_xlabel("")
-        ax1.set_ylabel("Q in miljoen m3 per dag", color="tab:blue")
+        ax1.set_ylabel("Q in miljoen m³ per dag", color="tab:blue")
         ax1.tick_params(axis="y", labelcolor="tab:blue")
 
         ax2 = ax1.twinx()
@@ -100,10 +111,10 @@ if dfs:
             label="Cumulative",
             markersize=3,
         )
-        ax2.set_ylabel("Cumulative Q in miljoen m3", color="tab:orange")
+        ax2.set_ylabel("Cumulative Q in miljoen m³", color="tab:orange")
         ax2.tick_params(axis="y", labelcolor="tab:orange")
 
-        plt.title(f"Q in miljoen m3 per dag - {file}")
+        plt.title(f"Q in miljoen m³ per dag - {file}")
         plt.xticks(rotation=45)
         ax1.grid()
         plt.tight_layout()
@@ -232,7 +243,7 @@ if dfs:
     # ax2.tick_params(axis="y", labelcolor="green")
 
     ax.axhline(y=0, color="gray", linestyle="--", linewidth=1)
-    ax.set_ylabel("Q in miljoen m3")
+    ax.set_ylabel("Q in miljoen m³")
     ax.set_title("Maandelijkse In- en Uitstroom debiet en netto debiet")
     ax.set_xlabel("Maand")
     ax.legend(title="NAME", bbox_to_anchor=(1.01, 1), loc="upper left")
@@ -248,11 +259,11 @@ if dfs:
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
 
     plt.tight_layout()
-    plt.savefig(
-        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\monthly_in_out_netto_flow.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
+    # plt.savefig(
+    #     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\monthly_in_out_netto_flow.png",
+    #     dpi=300,
+    #     bbox_inches="tight",
+    # )
     plt.show()
 # %%
 # Stacked barplot showing percentage of inflows and outflows per month
@@ -330,11 +341,11 @@ if dfs:
     ax2.tick_params(axis="x", rotation=45)
 
     plt.tight_layout()
-    plt.savefig(
-        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\monthly_in_out_percentage.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
+    # plt.savefig(
+    #     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\monthly_in_out_percentage.png",
+    #     dpi=300,
+    #     bbox_inches="tight",
+    # )
     plt.show()
 # %%
 # Plot daily max and min WAARDE per location (by day of year)
@@ -387,11 +398,11 @@ if dfs:
         )
 
         ax.set_xlabel("Date (MM-DD)")
-        ax.set_ylabel("Debiet in miljoen m3 per dag")
+        ax.set_ylabel("Debiet in miljoen m³ per dag")
         ax.legend()
 
         plt.title(
-            f"Daily Min/Max Debiet in miljoen m3 per dag - periode (2018-2022)\n{file}"
+            f"Daily Min/Max Debiet in miljoen m³ per dag - periode (2018-2022)\n{file}"
         )
         ax.set_xticks(range(0, 365, 30))
         ax.set_xticklabels(
@@ -442,7 +453,7 @@ if dfs:
                 )
 
             ax.set_xlabel("Week of Year (1-52)")
-            ax.set_ylabel("Debiet in miljoen m3 per dag")
+            ax.set_ylabel("Debiet in miljoen m³ per dag")
             ax.legend()
 
             plt.title(f"Daily Debiet Comparison Across Years - {file}")
@@ -544,10 +555,10 @@ ctx.add_basemap(
 ax.set_title("Debiet Locations")
 TODAY = pd.Timestamp.now().strftime("%Y%m%d")
 plt.tight_layout()
-plt.savefig(
-    rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\debiet_locations_map_20260720.png",
-    dpi=300,
-)
+# plt.savefig(
+#     rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet\debiet_locations_map_20260720.png",
+#     dpi=300,
+# )
 plt.show()
 # %%
 import contextily as ctx
@@ -962,7 +973,7 @@ if dfs:
         barmode="relative",
         title=f"Daily Inflows and Outflows - {first_year}",
         # xaxis_title="Date",
-        yaxis_title="Q in miljoen m3",
+        yaxis_title="Q in miljoen m³",
         hovermode="x unified",
         updatemenus=[
             dict(
@@ -980,7 +991,7 @@ if dfs:
         width=1200,
     )
 
-    fig.write_html("interactive_flows.html")
+    # fig.write_html("interactive_flows.html")
     fig.show()
 
 # %%
@@ -1025,9 +1036,60 @@ if dfs:
     ]
 
     output_dir = Path(
-        r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_20260803\figuren"
+        rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Define flow categories for colored spans (only relevant for IJssel)
+    flow_categories = [
+        # {"ymin": 1150, "ymax": float("inf"), "color": "#E59621", "va": "bottom", "alpha": 0.25, "label": "Hoge afvoer (>1150)"},
+        {
+            "ymin": 740,
+            "ymax": 1150,
+            "color": "#DCC814",
+            "va": "bottom",
+            "alpha": 0.45,
+            "label": "Verhoogde afvoer",
+        },
+        {
+            "ymin": 640,
+            "ymax": 740,
+            "color": "#B1FF3B",
+            "va": "bottom",
+            "alpha": 0.45,
+            "label": "Licht verhoogd",
+        },
+        {
+            "ymin": 165,
+            "ymax": 640,
+            "color": "#1B7F1B",
+            "va": "bottom",
+            "alpha": 0.45,
+            "label": "Normale afvoer",
+        },
+        {
+            "ymin": 0,
+            "ymax": 165,
+            "color": "#966921",
+            "va": "top",
+            "alpha": 0.45,
+            "label": "Verlaagde afvoer",
+        },
+    ]
+
+    # Define custom titles per NAME
+    custom_titles = {
+        "IJssel": "IJssel afvoer bij Olst per dag",
+        "Neerslag": "Neerslag op dagbasis",
+        "Verdamping": "Verdamping op dagbasis",
+        "Houtrib spuisluizen (Houtribdijk) aanvoer": "Spuidebiet Houtribsluizen per dag (richting IJsselmeer)",
+        "Houtrib spuisluizen (Houtribdijk) afvoer": "Spuidebiet Houtribsluizen per dag (richting Markermeer)",
+        "Krabbersgat spuisluizen (Houtribdijk) aanvoer": "Spuidebiet Krabbersgatsluizen per dag (richting IJsselmeer)",
+        "Krabbersgat spuisluizen (Houtribdijk) afvoer": "Spuidebiet Krabbersgatsluizen per dag (richting Markermeer)",
+        "Stevin spuisluizen (afsluitdijk)": "Spuidebiet Stevinsluizen per dag (richting Waddenzee)",
+        "Lorentz spuisluizen (Afsluitdijk)": "Spuidebiet Lorentzsluizen per dag (richting Waddenzee)",
+        "Berging IJsselmeer": "Berging IJsselmeer\nm.b.v. gew. gem. waterhoogte van 4 locaties in cm t.o.v. NAP",
+    }
 
     files = result_df["NAME"].unique()
     if locations_to_include:
@@ -1045,73 +1107,126 @@ if dfs:
             ax1.plot(
                 file_data["DATUM"],
                 file_data["WAARDE"],
-                linewidth=0.5,
+                linewidth=1,
                 color="lightblue",
-                label="Waterhoogte",
+                label="Berging",
                 zorder=1,
             )
 
-            ax1.scatter(
-                file_data["DATUM"],
-                file_data["WAARDE"],
-                s=7,
-                color="tab:blue",
-                zorder=2,
-            )
-            ax1.set_title(
-                "Berging IJsselmeer m.b.v. gew. gem. waterhoogte van 4 locaties in cm t.o.v. NAP"
-            )
+            ax1.set_title(custom_titles.get(file, file))
             ax1.set_ylim(None, None)  # Let matplotlib auto-scale for Berging
-            ax1.set_ylabel("Waterhoogte in cm t.o.v. NAP")
+            ax1.set_ylabel("Berging in miljoen m³")
         else:
+            # Apply flow category spans only for IJssel
+            if file == "IJssel":
+                for category in flow_categories:
+                    ax1.axhline(
+                        category["ymin"],
+                        color=category["color"],
+                        alpha=category["alpha"],
+                        linestyle="--",
+                        linewidth=1.5,
+                    )
+                    label_text = category.get("label", category.get("name", ""))
+                    if label_text:
+                        # Anchor y at the edge matching the vertical alignment so
+                        # va="top"/"bottom" is meaningful (midpoint makes va a no-op,
+                        # and ymax=inf would push the label off-screen).
+                        if category["va"] == "top":
+                            y_pos = category["ymax"] - 20
+                        elif category["va"] == "bottom":
+                            y_pos = category["ymin"] + 20
+                        else:
+                            y_pos = category["ymin"]
+                        ax1.text(
+                            0.01,
+                            y_pos,
+                            label_text,
+                            transform=ax1.get_yaxis_transform(),
+                            va=category["va"],
+                            ha="left",
+                            fontsize=9,
+                            color=category["color"],
+                            zorder=2,
+                            bbox=dict(
+                                boxstyle="round,pad=0.3",
+                                facecolor="white",
+                                edgecolor=category["color"],
+                                alpha=0.8,
+                            ),
+                        )
+
             if file in outflows:
                 file_data["WAARDE"] = -file_data["WAARDE"]
                 ax1.plot(
                     file_data["DATUM"],
                     file_data["WAARDE"],
-                    linewidth=0.5,
-                    color="lightblue",
+                    linewidth=0.9,
+                    color="#005A9C",
                     label="Debiet",
                     zorder=1,
                 )
 
-                ax1.scatter(
-                    file_data["DATUM"],
-                    file_data["WAARDE"],
-                    s=7,
-                    color="tab:blue",
-                    zorder=2,
-                )
             else:
+                file_data["WAARDE"] = file_data["WAARDE"]
                 ax1.plot(
                     file_data["DATUM"],
                     file_data["WAARDE"],
-                    linewidth=0.5,
-                    color="lightblue",
+                    linewidth=0.8,
+                    color="#005A9C",
                     label="Debiet",
                     zorder=1,
                 )
 
-                ax1.scatter(
-                    file_data["DATUM"],
-                    file_data["WAARDE"],
-                    s=7,
-                    color="tab:blue",
-                    zorder=2,
-                )
-
-            ax1.set_title(f"Debiet voor {file} IJsselmeer")
-            ax1.set_ylabel("Debiet in miljoen m³ per dag")
+            ax1.set_title(custom_titles.get(file, f"Debiet voor {file} IJsselmeer"))
+            ax1.set_ylabel("Debiet in m³/s")
             ax1.axhline(y=0, color="grey", linestyle="-", linewidth=1, alpha=0.7)
-        ax1.grid(True, alpha=0.3)
-        ax1.legend(fontsize="small")
-        ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2027-01-01"))
+        ax1.grid(True, alpha=0.25)
+        if file == "IJssel":
+            ax1.set_ylim(0, file_data["WAARDE"].max() * 1.1)  # Add 10% headroom
+            ax1.set_xlim(pd.Timestamp("2017-02-01"), pd.Timestamp("2023-01-01"))
+        else:
+            ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2023-01-01"))
+        ax1.ticklabel_format(style="plain", axis="y")
+
+        _valid_dates = file_data.loc[file_data["WAARDE"].notna(), "DATUM"]
+        _min_date = _valid_dates.min()
+        _max_date = _valid_dates.max()
+        _min_str = _min_date.strftime("%d-%m-%Y") if pd.notna(_min_date) else "?"
+        _max_str = _max_date.strftime("%d-%m-%Y") if pd.notna(_max_date) else "?"
+        ax1.text(
+            0.99,
+            0.01,
+            f"Data: {_min_str} t/m {_max_str} | Deltares | {TODAY}",
+            transform=ax1.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=7,
+            color="grey",
+            alpha=0.7,
+        )
 
         plt.tight_layout()
-        safe_file = file.replace(" ", "_").replace("/", "-")
-        fig.savefig(
-            output_dir / f"debiet_{safe_file}.png", dpi=300, bbox_inches="tight"
+        file_clean = (
+            file.replace(" ", "_")
+            .replace("/", "-")
+            .replace(",", "_")
+            .replace("(", "_")
+            .replace(")", "_")
+            .replace(":", "_")
+            .replace(";", "_")
+            .replace(".", "_")
+            .replace("-", "_")
         )
+        file_clean = file_clean.replace("__", "_")
+        fig_name_clean = f"carlijn_debiet_{file_clean}_{TODAY}.png"
+        fig_name_clean = fig_name_clean.replace("__", "_")
+        output_dir = Path(
+            rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet"
+        )
+        output_path = output_dir / fig_name_clean
+        print(f"Saving figure to: {output_path}")
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.show()
 
     # Plot sum of all other locations
@@ -1138,28 +1253,42 @@ if dfs:
         ax1.plot(
             other_data["DATUM"],
             other_data["WAARDE"],
-            linewidth=0.5,
-            color="lightblue",
-            label="Debiet",
+            linewidth=0.8,
+            color="#005A9C",
+            label="Afvoer",
             zorder=1,
         )
-        ax1.scatter(
-            other_data["DATUM"],
-            other_data["WAARDE"],
-            s=7,
-            color="tab:blue",
-            zorder=2,
-        )
-        ax1.set_title("Totale debiet IJsselmeer in - overige locaties (gesommeerd)")
-        ax1.set_ylabel("Debiet in miljoen m³ per dag")
+
+        ax1.set_title("Overige regionale watervraag (totaal overige termen)")
+        ax1.set_ylabel("Debiet in m³/s")
         ax1.axhline(y=0, color="grey", linestyle="-", linewidth=1, alpha=0.7)
-        ax1.grid(True, alpha=0.3)
-        ax1.legend(fontsize="small")
-        ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2027-01-01"))
+        ax1.grid(True, alpha=0.25)
+        ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2023-01-01"))
+        ax1.ticklabel_format(style="plain", axis="y")
+
+        _valid_dates = other_data.loc[other_data["WAARDE"].notna(), "DATUM"]
+        _min_date = _valid_dates.min()
+        _max_date = _valid_dates.max()
+        _min_str = _min_date.strftime("%d-%m-%Y") if pd.notna(_min_date) else "?"
+        _max_str = _max_date.strftime("%d-%m-%Y") if pd.notna(_max_date) else "?"
+        ax1.text(
+            0.99,
+            0.01,
+            f"Data: {_min_str} t/m {_max_str} | Deltares | {TODAY}",
+            transform=ax1.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=7,
+            color="grey",
+            alpha=0.7,
+        )
 
         plt.tight_layout()
+        output_dir = Path(
+            rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\debiet"
+        )
         fig.savefig(
-            output_dir / "debiet_all_other_locations_summed.png",
+            output_dir / f"carlijn_debiet_overig_{TODAY}.png",
             dpi=300,
             bbox_inches="tight",
         )

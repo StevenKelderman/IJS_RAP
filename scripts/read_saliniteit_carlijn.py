@@ -5,6 +5,7 @@ import pandas as pd
 
 # Directory to search for .YMR files
 search_dir = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\data_vanCarlijn\CNonequi\CNonequi"
+# search_dir = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\data_vanCarlijn\BalansData\BalansData\YMR\Zout\Cnet"
 
 # Find all .YMR files
 ymr_files = list(Path(search_dir).glob("*.YMR"))
@@ -47,9 +48,17 @@ if dfs:
     print(f"\nCombined dataframe shape: {result_df.shape}")
     print(result_df.head())
 
+    # Print min and max years
+    min_year = result_df["DATUM"].dt.year.min()
+    max_year = result_df["DATUM"].dt.year.max()
+    print(f"\nData year range: {min_year} - {max_year}")
+
     # Optional: Save to CSV
-    result_df.to_csv("combined_neerslag.csv", index=False)
-    print("\nSaved to combined_neerslag.csv")
+    result_df.to_parquet(
+        f"P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\zout_YMR_carlijn_{min_year}_{max_year}.parquet",
+        index=False,
+    )
+    print(f"\nSaved to zout_YMR_carlijn_{min_year}_{max_year}.parquet")
 else:
     print("No files were loaded successfully")
 
@@ -58,40 +67,269 @@ else:
 if dfs:
     combinations = result_df[["NAME", "FILE"]].drop_duplicates()
     print(f"\nCombinations of NAME and FILE:\n{combinations}")
+
 # %%
 result_df
 # %%
 # Plot WAARDE per DATUM for each FILE
 if dfs:
+    import datetime as dt
+    import warnings
+
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    import numpy as np
+
+    TODAY = dt.date.today().strftime("%Y%m%d")
 
     files = result_df["NAME"].unique()
     for file in files:
+        print(f"Plotting for {file}...")
         file_data = (
             result_df[result_df["NAME"] == file]
             .sort_values("DATUM")
             .reset_index(drop=True)
         )
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots(1, 1, figsize=(10, 5), sharex=False, sharey=False)
+
+        # # Reindex to a continuous daily range so missing dates create gaps
+        # full_range = pd.date_range(
+        #     file_data["DATUM"].min(),
+        #     file_data["DATUM"].max(),
+        #     freq="1MS",
+        # )
+        # reindexed = (
+        #     pd.DataFrame({"DATUM": full_range})
+        #     .merge(file_data[["DATUM", "WAARDE"]], on="DATUM", how="left")
+        #     .sort_values("DATUM")
+        # )
 
         ax.plot(
             file_data["DATUM"],
             file_data["WAARDE"],
-            marker="o",
-            linestyle="-",
-            color="tab:blue",
+            linewidth=0.8,
+            color="#132D6B",
             label="Daily",
         )
-        ax.set_xlabel("")
-        ax.set_ylabel("Chloride gehalte in mg/l", color="tab:blue")
-        ax.tick_params(axis="y", labelcolor="tab:blue")
 
-        plt.title(f"Chloride gehalte in mg/l - {file}")
-        plt.xticks(rotation=45)
-        plt.xlim(pd.Timestamp(2017, 12, 31), file_data["DATUM"].max())
-        ax.grid()
-        plt.tight_layout()
+        ax.set_title(f"{file} - Chloride concentratie")
+        ax.set_ylabel("Concentratie mg/l")
+
+        # Set y-axis limit based on data values (ignore threshold lines)
+        data_max = file_data["WAARDE"].max()
+        y_top = data_max * 1.25 if pd.notna(data_max) and data_max > 0 else 1.0
+
+        # Define flow categories for colored threshold lines
+        flow_categories = [
+            {
+                "ymin": 16_500,
+                "ymax": 100_000,
+                "color": "#0F0F0D",
+                "va": "bottom",
+                "ls": "-.",
+                "lw": 1.5,
+                "label": "zout",
+            },
+            {
+                "ymin": 10_000,
+                "ymax": 16_500,
+                "color": "#161947",
+                "va": "bottom",
+                "ls": "-.",
+                "lw": 1.5,
+                "label": "Sterk brak tot zout",
+            },
+            {
+                "ymin": 3000,
+                "ymax": 10_000,
+                "color": "#1B4F9C",
+                "va": "bottom",
+                "ls": "-.",
+                "lw": 1,
+                "label": "Brak",
+            },
+            {
+                "ymin": 1000,
+                "ymax": 3000,
+                "color": "#4FA3D1",
+                "va": "bottom",
+                "ls": "-.",
+                "lw": 1,
+                "label": "Zwak brak",
+            },
+            {
+                "ymin": 300,
+                "ymax": 1000,
+                "color": "#7FD4E8",
+                "va": "bottom",
+                "ls": "--",
+                "lw": 1.5,
+                "label": "Licht brak",
+            },
+            {
+                "ymin": 150,
+                "ymax": 300,
+                "color": "#A7DC14",
+                "va": "bottom",
+                "ls": "--",
+                "lw": 1.5,
+                "label": "Matig zoet",
+            },
+            {
+                "ymin": 0,
+                "ymax": 150,
+                "color": "#1B7F1B",
+                "va": "bottom",
+                "ls": "--",
+                "lw": 1,
+                "label": "Zoet",
+            },
+        ]
+
+        # Set y-axis lower limit based on data value. If the data min is above
+        # 1000, only show relevant categories by starting the axis at the
+        # highest category threshold that is still below the data min.
+        data_min = file_data["WAARDE"].min()
+        y_bottom = 0.0
+        if pd.notna(data_min) and data_min > 1000:
+            thresholds_below = [
+                cat["ymin"] for cat in flow_categories if cat["ymin"] < data_min
+            ]
+            if thresholds_below:
+                y_bottom = (
+                    max(thresholds_below) * 0.98
+                )  # Slightly below the highest threshold
+        ax.set_ylim(y_bottom, y_top)
+
+        for category in flow_categories:
+            # Skip thresholds that fall outside the data-based y range
+            if category["ymin"] > y_top or category["ymin"] < y_bottom:
+                continue
+            ax.axhline(
+                category["ymin"],
+                color=category["color"],
+                alpha=0.45,
+                linestyle=category["ls"],
+                linewidth=category["lw"],
+                zorder=-10,
+            )
+            label_text = category.get("label", category.get("name", ""))
+            if label_text:
+                # Always print the label just above the threshold line, with
+                # an offset that scales with the visible y range so it stays
+                # meaningful regardless of the axis limits (including when
+                # y_bottom > 1000).
+                offset = (y_top - y_bottom) * 0.02
+                y_pos = category["ymin"] + offset
+                # Skip labels that would fall outside the data-based y range
+                if y_pos > y_top or y_pos < y_bottom:
+                    continue
+                ax.text(
+                    0.01,
+                    y_pos,
+                    label_text,
+                    transform=ax.get_yaxis_transform(),
+                    va="bottom",
+                    ha="left",
+                    fontsize=9,
+                    color=category["color"],
+                    zorder=2,
+                    bbox=dict(
+                        boxstyle="round,pad=0.3",
+                        facecolor="white",
+                        edgecolor=category["color"],
+                        alpha=0.8,
+                    ),
+                )
+
+        ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+
+        # ax.spines[['top', 'right']].set_visible(False)
+
+        _valid_dates = file_data.loc[file_data["WAARDE"].notna(), "DATUM"]
+        _min_date = _valid_dates.min()
+        _max_date = _valid_dates.max()
+        _min_str = _min_date.strftime("%d-%m-%Y") if pd.notna(_min_date) else "?"
+        _max_str = _max_date.strftime("%d-%m-%Y") if pd.notna(_max_date) else "?"
+        ax.text(
+            0.99,
+            0.99,
+            f"Data: {_min_str} t/m {_max_str} | Deltares | {TODAY}",
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=7,
+            color="grey",
+            alpha=0.7,
+        )
+
+        ax.set_xlim(dt.datetime(2017, 6, 30), dt.datetime(2026, 4, 1))
+        xlim_min = dt.datetime(2017, 6, 30)
+        xlim_max = dt.datetime(2023, 1, 1)
+        ax.set_xlim(xlim_min, xlim_max)
+
+        # Check if no data within xlim but data after xlim_max
+        data_in_xlim = file_data[
+            (file_data["DATUM"] >= xlim_min) & (file_data["DATUM"] <= xlim_max)
+        ]
+        data_after_xlim = file_data[file_data["DATUM"] > xlim_max]
+        if len(data_in_xlim) == 0 and len(data_after_xlim) > 0:
+            ax.text(
+                0.5,
+                0.5,
+                "Data available after 2023",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=18,
+                color="grey",
+                alpha=0.5,
+            )
+
+        ax.grid(True, alpha=0.25)
+
+        # Dummy legend with an invisible entry so the reserved space matches
+        # plots that do have a (visible) legend
+        dummy_handle = Line2D([], [], linestyle="none", marker="none")
+        legend = ax.legend(
+            [dummy_handle],
+            [" "],
+            fontsize=28,
+            loc="upper left",
+            title_fontsize=14,
+            bbox_to_anchor=(1.0, 1.0),
+        )
+        legend.get_frame().set_alpha(0)
+        for text in legend.get_texts():
+            text.set_alpha(0)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            fig.tight_layout()
+        TODAY = 20260824
+
+        file_clean = (
+            file.replace(" ", "_")
+            .replace("/", "-")
+            .replace(",", "_")
+            .replace("(", "_")
+            .replace(")", "_")
+        )
+        file_clean = file_clean.replace("__", "_")
+        fig_name_clean = f"carlijn_chloride_{file_clean}_{TODAY}.png"
+        fig_name_clean = fig_name_clean.replace("__", "_")
+        output_dir = Path(
+            rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\saliniteit"
+        )
+        output_path = output_dir / fig_name_clean
+        print(f"Saving figure to: {output_path}")
+        plt.savefig(
+            output_path,
+            dpi=300,
+            bbox_inches="tight",
+        )
         plt.show()
+        plt.close()
 # %%
 # %%
 # Plot WAARDE per DATUM for each FILE
