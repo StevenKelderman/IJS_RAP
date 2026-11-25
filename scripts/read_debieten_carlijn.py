@@ -1260,27 +1260,48 @@ if dfs:
         if file == "IJssel":
             ax1.set_ylim(0, file_data["WAARDE"].max() * 1.1)  # Add 10% headroom
             ax1.set_xlim(pd.Timestamp("2017-02-01"), pd.Timestamp("2023-01-01"))
+            # Format monthly datetime x-axis cleanly
+            import matplotlib.dates as mdates
+    
+            _n_months = file_data["DATUM"].dt.to_period("M").nunique()
+            _month_interval = next((d for d in (1, 2, 3, 4, 6, 12) if _n_months / d <= 12), 12)
+            ax1.xaxis.set_major_locator(
+                mdates.MonthLocator(bymonth=range(1, 13, _month_interval))
+            )
+            ax1.xaxis.set_major_formatter(
+                mdates.ConciseDateFormatter(
+                    ax1.xaxis.get_major_locator(),
+                    formats=["%Y", "%b\n ", "%d", "%H:%M", "%H:%M", "%S.%f"],
+                    zero_formats=["", "%b\n%Y", "%b", "%b-%d", "%H:%M", "%H:%M"],
+                    show_offset=False,
+                )
+            )
+            _xticks = ax1.get_xticks()
+            if len(_xticks) > 1:
+                ax1.set_xticks(_xticks[1:])
+            plt.setp(ax1.get_xticklabels(), ha="center")
         else:
             ax1.set_xlim(pd.Timestamp("2017-12-31"), pd.Timestamp("2023-01-01"))
+            # Format monthly datetime x-axis cleanly
+            import matplotlib.dates as mdates
+    
+            _n_months = file_data["DATUM"].dt.to_period("M").nunique()
+            _month_interval = next((d for d in (1, 2, 3, 4, 6, 12) if _n_months / d <= 12), 12)
+            ax1.xaxis.set_major_locator(
+                mdates.MonthLocator(bymonth=range(1, 13, _month_interval))
+            )
+            ax1.xaxis.set_major_formatter(
+                mdates.ConciseDateFormatter(
+                    ax1.xaxis.get_major_locator(),
+                    formats=["%Y", "%b\n ", "%d", "%H:%M", "%H:%M", "%S.%f"],
+                    zero_formats=["", "%b\n%Y", "%b", "%b-%d", "%H:%M", "%H:%M"],
+                    show_offset=False,
+                )
+            )
+            plt.setp(ax1.get_xticklabels(), ha="center")
         ax1.ticklabel_format(style="plain", axis="y")
 
-        # Format monthly datetime x-axis cleanly
-        import matplotlib.dates as mdates
-
-        _n_months = file_data["DATUM"].dt.to_period("M").nunique()
-        _month_interval = next((d for d in (1, 2, 3, 4, 6, 12) if _n_months / d <= 12), 12)
-        ax1.xaxis.set_major_locator(
-            mdates.MonthLocator(bymonth=range(1, 13, _month_interval))
-        )
-        ax1.xaxis.set_major_formatter(
-            mdates.ConciseDateFormatter(
-                ax1.xaxis.get_major_locator(),
-                formats=["%Y", "%b\n ", "%d", "%H:%M", "%H:%M", "%S.%f"],
-                zero_formats=["", "%b\n%Y", "%b", "%b-%d", "%H:%M", "%H:%M"],
-                show_offset=False,
-            )
-        )
-        plt.setp(ax1.get_xticklabels(), ha="center")
+        
 
         _valid_dates = file_data.loc[file_data["WAARDE"].notna(), "DATUM"]
         _min_date = _valid_dates.min()

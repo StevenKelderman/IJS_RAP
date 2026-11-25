@@ -2,6 +2,8 @@
 from pathlib import Path
 
 import pandas as pd
+import matplotlib.dates as mdates
+import matplotlib as mpl
 
 # Directory to search for .YMR files
 search_dir = r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\data_vanCarlijn\CNonequi\CNonequi"
@@ -287,6 +289,24 @@ if dfs:
             )
 
         ax.grid(True, alpha=0.25)
+        # Format monthly datetime x-axis cleanly
+        _n_months = file_data["DATUM"].dt.to_period("M").nunique()
+        _month_interval = next((d for d in (1, 2, 3, 4, 6, 12) if _n_months / d <= 12), 12)
+        ax.xaxis.set_major_locator(
+            mdates.MonthLocator(bymonth=range(1, 13, _month_interval))
+        )
+        ax.xaxis.set_major_formatter(
+            mdates.ConciseDateFormatter(
+                ax.xaxis.get_major_locator(),
+                formats=["%Y", "%b\n ", "%d", "%H:%M", "%H:%M", "%S.%f"],
+                zero_formats=["", "%b\n%Y", "%b", "%b-%d", "%H:%M", "%H:%M"],
+                show_offset=False,
+            )
+        )
+        _xticks = ax.get_xticks()
+        if len(_xticks) > 1:
+            ax.set_xticks(_xticks[1:])
+        plt.setp(ax.get_xticklabels(), ha="center")
 
         # Dummy legend with an invisible entry so the reserved space matches
         # plots that do have a (visible) legend
@@ -316,7 +336,7 @@ if dfs:
             .replace(")", "_")
         )
         file_clean = file_clean.replace("__", "_")
-        fig_name_clean = f"carlijn_chloride_{file_clean}_{TODAY}.png"
+        fig_name_clean = f"carlijn_chloride_YMR_{file_clean}_{TODAY}.png"
         fig_name_clean = fig_name_clean.replace("__", "_")
         output_dir = Path(
             rf"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\run_{TODAY}\figuren\saliniteit"
@@ -335,114 +355,114 @@ if dfs:
 # Plot WAARDE per DATUM for each FILE
 # %%
 # Plot monthly max and min WAARDE per location
-if dfs:
-    import matplotlib.pyplot as plt
+# if dfs:
+#     import matplotlib.pyplot as plt
 
-    files = result_df["NAME"].unique()
-    for file in files:
-        file_data = (
-            result_df[result_df["NAME"] == file]
-            .sort_values("DATUM")
-            .reset_index(drop=True)
-        )
-        file_data["Month"] = file_data["DATUM"].dt.month
+#     files = result_df["NAME"].unique()
+#     for file in files:
+#         file_data = (
+#             result_df[result_df["NAME"] == file]
+#             .sort_values("DATUM")
+#             .reset_index(drop=True)
+#         )
+#         file_data["Month"] = file_data["DATUM"].dt.month
 
-        monthly_stats = (
-            file_data.groupby("Month")["WAARDE"].agg(["min", "max"]).reset_index()
-        )
+#         monthly_stats = (
+#             file_data.groupby("Month")["WAARDE"].agg(["min", "max"]).reset_index()
+#         )
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+#         fig, ax = plt.subplots(figsize=(12, 6))
 
-        ax.plot(
-            monthly_stats["Month"],
-            monthly_stats["max"],
-            marker="o",
-            linestyle="-",
-            color="tab:red",
-            label="Max",
-        )
-        ax.plot(
-            monthly_stats["Month"],
-            monthly_stats["min"],
-            marker="o",
-            linestyle="-",
-            color="tab:blue",
-            label="Min",
-        )
-        ax.fill_between(
-            monthly_stats["Month"],
-            monthly_stats["min"],
-            monthly_stats["max"],
-            alpha=0.2,
-            color="tab:gray",
-        )
+#         ax.plot(
+#             monthly_stats["Month"],
+#             monthly_stats["max"],
+#             marker="o",
+#             linestyle="-",
+#             color="tab:red",
+#             label="Max",
+#         )
+#         ax.plot(
+#             monthly_stats["Month"],
+#             monthly_stats["min"],
+#             marker="o",
+#             linestyle="-",
+#             color="tab:blue",
+#             label="Min",
+#         )
+#         ax.fill_between(
+#             monthly_stats["Month"],
+#             monthly_stats["min"],
+#             monthly_stats["max"],
+#             alpha=0.2,
+#             color="tab:gray",
+#         )
 
-        ax.set_xlabel("Month of Year")
-        ax.set_ylabel("Chloride gehalte in mg/l")
-        ax.legend()
+#         ax.set_xlabel("Month of Year")
+#         ax.set_ylabel("Chloride gehalte in mg/l")
+#         ax.legend()
 
-        plt.title(f"Monthly Min/Max Chloride gehalte in mg/l - {file}")
-        ax.grid()
-        plt.tight_layout()
-        plt.show()
+#         plt.title(f"Monthly Min/Max Chloride gehalte in mg/l - {file}")
+#         ax.grid()
+#         plt.tight_layout()
+#         plt.show()
 
 # %%
 # Plot daily max and min WAARDE per location (by day of year)
-if dfs:
-    import matplotlib.pyplot as plt
+# if dfs:
+#     import matplotlib.pyplot as plt
 
-    files = result_df["NAME"].unique()
-    for file in files:
-        file_data = (
-            result_df[result_df["NAME"] == file]
-            .sort_values("DATUM")
-            .reset_index(drop=True)
-        )
-        file_data["4WeeksOfYear"] = file_data["DATUM"].dt.isocalendar().week // 4 + 1
+#     files = result_df["NAME"].unique()
+#     for file in files:
+#         file_data = (
+#             result_df[result_df["NAME"] == file]
+#             .sort_values("DATUM")
+#             .reset_index(drop=True)
+#         )
+#         file_data["4WeeksOfYear"] = file_data["DATUM"].dt.isocalendar().week // 4 + 1
 
-        weekly_stats = (
-            file_data.groupby("4WeeksOfYear")["WAARDE"]
-            .agg(["min", "max"])
-            .reset_index()
-        )
+#         weekly_stats = (
+#             file_data.groupby("4WeeksOfYear")["WAARDE"]
+#             .agg(["min", "max"])
+#             .reset_index()
+#         )
 
-        fig, ax = plt.subplots(figsize=(14, 6))
+#         fig, ax = plt.subplots(figsize=(14, 6))
 
-        ax.plot(
-            weekly_stats["4WeeksOfYear"],
-            weekly_stats["max"],
-            marker="o",
-            linestyle="-",
-            color="tab:red",
-            label="Max",
-            markersize=3,
-        )
-        ax.plot(
-            weekly_stats["4WeeksOfYear"],
-            weekly_stats["min"],
-            marker="o",
-            linestyle="-",
-            color="tab:blue",
-            label="Min",
-            markersize=3,
-        )
-        ax.fill_between(
-            weekly_stats["4WeeksOfYear"],
-            weekly_stats["min"],
-            weekly_stats["max"],
-            alpha=0.2,
-            color="tab:gray",
-        )
+#         ax.plot(
+#             weekly_stats["4WeeksOfYear"],
+#             weekly_stats["max"],
+#             marker="o",
+#             linestyle="-",
+#             color="tab:red",
+#             label="Max",
+#             markersize=3,
+#         )
+#         ax.plot(
+#             weekly_stats["4WeeksOfYear"],
+#             weekly_stats["min"],
+#             marker="o",
+#             linestyle="-",
+#             color="tab:blue",
+#             label="Min",
+#             markersize=3,
+#         )
+#         ax.fill_between(
+#             weekly_stats["4WeeksOfYear"],
+#             weekly_stats["min"],
+#             weekly_stats["max"],
+#             alpha=0.2,
+#             color="tab:gray",
+#         )
 
-        ax.set_xlabel("Week of Year")
-        ax.set_ylabel("Chloride gehalte in mg/l")
-        ax.legend()
+#         ax.set_xlabel("Week of Year")
+#         ax.set_ylabel("Chloride gehalte in mg/l")
+#         ax.legend()
 
-        plt.title(f"Weekly Min/Max Chloride gehalte in mg/l - {file}")
-        ax.set_xlim(0, 15)
-        ax.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.show()
+#         plt.title(f"Weekly Min/Max Chloride gehalte in mg/l - {file}")
+#         ax.set_xlim(0, 15)
+#         ax.grid(alpha=0.3)
+#         plt.tight_layout()
+#         plt.show()
 # %%
 file_data
 # %%
@@ -470,7 +490,7 @@ for name, group in yearly_mean.groupby("NAME"):
     yearly_dict[name] = group.sort_values("year")
 
 locaties = gpd.read_file(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\3_processed\locaties_debiet.gpkg"
+    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\GIS\locaties_debiet.gpkg"
 )
 locaties
 # %%
