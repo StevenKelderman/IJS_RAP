@@ -20,7 +20,7 @@ TODAY = dt.datetime.now().strftime("%Y%m%d")
 # READ DEBIET CARLIJN
 measurements_debiet_carlijn_daily = (
     pl.scan_parquet(
-        "P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\debieten_carlijn_2018_2022.parquet"
+        "P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\debieten_carlijn_YMR_2018_2022.parquet"
     )
 ).collect()
 
@@ -77,7 +77,7 @@ hoogte_col = "WaarnemingMetadata.Bemonsteringshoogte"
 group_cols = ["Naam", "Grootheid.Code", "Eenheid.Code", hoogte_col]
 
 # Aggregate 10-minute data to daily means per station/parameter/height combination
-measurements_saliniteit_daily = (
+measurements_saliniteit_daily_WADAR = (
     pl.scan_parquet(
         PROJECT_DIR
         / "analyse"
@@ -118,6 +118,34 @@ measurements_saliniteit_daily = (
     .collect()
 )
 
+measurements_saliniteit_daily_WADAR
+# %%
+# READ CHLORIDE CARLIJN
+measurements_chloride_carlijn_daily = (
+    pl.scan_parquet(
+        "P:\\11212806-wbb02-2026\\009_Jaarrapportage_IJsselmeer\\analyse\\data\\3_processed\\zout_YMR_carlijn_2018_2022.parquet"
+    )
+).collect()
+
+measurements_chloride_carlijn_daily = measurements_chloride_carlijn_daily.with_columns(
+    pl.lit("mg/l").alias("Eenheid.Code"),
+    pl.lit(-1).cast(pl.Float64).alias("WaarnemingMetadata.Bemonsteringshoogte"),
+    pl.lit("CONCTTE").alias("Grootheid.Code")
+).filter(
+    pl.col("NAME")!="Berging IJsselmeer"
+)
+
+measurements_chloride_carlijn_daily = measurements_chloride_carlijn_daily.rename(
+    {
+        "DATUM": "time",
+        "WAARDE": "Meetwaarde.Waarde_Numeriek",
+        "NAME": "Naam",
+    }
+)
+
+measurements_chloride_carlijn_daily
+# %%
+measurements_saliniteit_daily = pl.concat([measurements_saliniteit_daily_WADAR, measurements_chloride_carlijn_daily], how="diagonal_relaxed")
 measurements_saliniteit_daily
 # %%
 # READ WADAR WIND
@@ -166,39 +194,39 @@ measurements_wind_daily
 # READ WADAR WATERHOOGTE
 # Export one CSV per unique combination of Naam, Grootheid.Code, Eenheid.Code and sampling height
 
-group_cols = [
-    "Code",
-    "Naam",
-    "Grootheid.Code",
-    "Parameter_Wat_Omschrijving",
-    "Eenheid.Code",
-    "WaardeBewerkingsMethode.Omschrijving",
-]
+# group_cols = [
+#     "Code",
+#     "Naam",
+#     "Grootheid.Code",
+#     "Parameter_Wat_Omschrijving",
+#     "Eenheid.Code",
+#     "WaardeBewerkingsMethode.Omschrijving",
+# ]
 
-# Aggregate 10-minute data to daily means per station/parameter/height combination
-measurements_waterhoogte_daily = (
-    pl.scan_parquet(
-        PROJECT_DIR
-        / "analyse"
-        / "data"
-        / "1_raw"
-        / "per_location_per_year"
-        / "waterhoogte"
-        / "*.parquet",
-        missing_columns="insert",
-    )
-    .filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50)
-    .with_columns(
-        pl.col("time").cast(pl.Datetime, strict=False).dt.date().alias("time")
-    )
-    .group_by(group_cols + ["time"])
-    .agg(
-        pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("Meetwaarde.Waarde_Numeriek")
-    )
-    .sort(group_cols + ["time"])
-    .collect()
-)
-measurements_waterhoogte_daily
+# # Aggregate 10-minute data to daily means per station/parameter/height combination
+# measurements_waterhoogte_daily = (
+#     pl.scan_parquet(
+#         PROJECT_DIR
+#         / "analyse"
+#         / "data"
+#         / "1_raw"
+#         / "per_location_per_year"
+#         / "waterhoogte"
+#         / "*.parquet",
+#         missing_columns="insert",
+#     )
+#     .filter(pl.col("WaarnemingMetadata.Kwaliteitswaardecode").cast(pl.Int32) <= 50)
+#     .with_columns(
+#         pl.col("time").cast(pl.Datetime, strict=False).dt.date().alias("time")
+#     )
+#     .group_by(group_cols + ["time"])
+#     .agg(
+#         pl.col("Meetwaarde.Waarde_Numeriek").mean().alias("Meetwaarde.Waarde_Numeriek")
+#     )
+#     .sort(group_cols + ["time"])
+#     .collect()
+# )
+# measurements_waterhoogte_daily
 # %%
 # measurements_debiet_daily # m3/d / m3/s
 # measurements_debiet_carlijn_daily
@@ -307,10 +335,15 @@ direction_colors = {
     direction: colors[i] for i, direction in enumerate(compass_directions.keys())
 }
 
+import pandas as pd
+
 for idx, station in enumerate(unique_stations):
-    station_data = (
-        wind_combined.filter(pl.col("Naam") == station).sort("time").to_pandas()
+    station_data = pd.DataFrame(
+        wind_combined.filter(pl.col("Naam") == station)
+        .sort("time")
+        .to_dict(as_series=False)
     )
+    station_data["time"] = pd.to_datetime(station_data["time"])
 
     # Bin wind directions
     station_data["wind_direction_bin"] = station_data["wind_direction"].apply(
@@ -358,13 +391,12 @@ for idx, station in enumerate(unique_stations):
     cbar.set_label("Wind Direction", rotation=270, labelpad=20)
 
 plt.tight_layout()
-plt.savefig(
-    r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\wind\wind_speed_with_direction_coloring.png",
-    dpi=300,
-    bbox_inches="tight",
-)
+# plt.savefig(
+#     r"P:\11212806-wbb02-2026\009_Jaarrapportage_IJsselmeer\analyse\data\4_output\figuren\wind\wind_speed_with_direction_coloring.png",
+#     dpi=300,
+#     bbox_inches="tight",
+# )
 plt.show()
-
 # %%
 # Interactive plot with wind direction arrows using Plotly with year dropdown
 
@@ -513,14 +545,14 @@ output_dir = DATA_OUTPUT_DIR / "figuren" / "wind"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 output_path = output_dir / f"wind_speed_direction_{station}.html"
-fig.write_html(str(output_path))
-fig.write_html(
-    str(output_path),
-    full_html=True,
-    include_plotlyjs=True,
-    default_height=600,
-    default_width=1000,
-)
+# fig.write_html(str(output_path))
+# fig.write_html(
+#     str(output_path),
+#     full_html=True,
+#     include_plotlyjs=True,
+#     default_height=600,
+#     default_width=1000,
+# )
 print(f"Saved combined: {output_path}")
 fig.show()
 
@@ -537,7 +569,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
     # Define NAMEs that are leaving (outflows)
     outflows = [
         "Verdamping",
-        "Stevin spuisluizen (afsluitdijk)",
+        "Stevin spuisluizen (Afsluitdijk)",
         "Lorentz spuisluizen (Afsluitdijk)",
         "lek Spuisluizen (Afsluitdijk)",
         "PWN & WRK III",
@@ -563,8 +595,10 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     # Define IJssel inflow and Stevin/Lorentz outflows specifically
     ijssel_inflow = ["IJssel"]
-    stevin_outflows = ["Stevin spuisluizen (afsluitdijk)"]
+    stevin_outflows = ["Stevin spuisluizen (Afsluitdijk)"]
     lorentz_outflows = ["Lorentz spuisluizen (Afsluitdijk)"]
+    neerslag_inflow = ["Neerslag"]
+    verdamping_outflow = ["Verdamping"]
 
     def categorize_flow(name):
         if name in ijssel_inflow:
@@ -573,6 +607,10 @@ if measurements_debiet_carlijn_daily_filt is not None:
             return "Stevinsluizen"
         elif name in lorentz_outflows:
             return "Lorentzsluizen"
+        elif name in neerslag_inflow:
+            return "Neerslag"
+        elif name in verdamping_outflow:
+            return "Verdamping"
         elif name in outflows:
             return "Overig uit"
         else:
@@ -586,19 +624,21 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     # Group by year, date and NAME, summing WAARDE
     daily_flows = result_df_copy.group_by(["Year", "Datum", "Naam", "FlowType"]).agg(
-        pl.col("Meetwaarde.Waarde_Numeriek").sum()
+        pl.col("Meetwaarde.Waarde_Numeriek").sum().round(1)
     )
 
     # Get unique years for dropdown
     years = sorted(daily_flows["Year"].unique())
 
-    # Define colors
+    # Define colors (cool tones for inflows, warm tones for outflows)
     colors = {
-        "IJssel": "darkblue",
-        "Overig in": "lightblue",
-        "Stevinsluizen": "darkred",
-        "Lorentzsluizen": "red",
-        "Overig uit": "lightsalmon",
+        "IJssel": "#2B5C8F",
+        "Neerslag": "#4CAF82",
+        "Overig in": "#89C2D9",
+        "Stevinsluizen": "#A63446",
+        "Lorentzsluizen": "#E07A38",
+        "Verdamping": "#D48CA8",
+        "Overig uit": "#F2C57C",
     }
 
     # Create buttons for year dropdown
@@ -621,6 +661,20 @@ if measurements_debiet_carlijn_daily_filt is not None:
             row[0]: row[1]
             for row in zip(
                 pivot_ijssel["Datum"], pivot_ijssel["Meetwaarde.Waarde_Numeriek"]
+            )
+        }
+
+        pivot_neerslag = (
+            year_data.filter(pl.col("FlowType") == "Neerslag")
+            .group_by("Datum")
+            .agg(pl.col("Meetwaarde.Waarde_Numeriek").sum())
+            .sort("Datum")
+            .to_dict(as_series=False)
+        )
+        pivot_neerslag = {
+            row[0]: row[1]
+            for row in zip(
+                pivot_neerslag["Datum"], pivot_neerslag["Meetwaarde.Waarde_Numeriek"]
             )
         }
 
@@ -653,6 +707,20 @@ if measurements_debiet_carlijn_daily_filt is not None:
             )
         }
 
+        pivot_verdamping = (
+            year_data.filter(pl.col("FlowType") == "Verdamping")
+            .group_by("Datum")
+            .agg(pl.col("Meetwaarde.Waarde_Numeriek").sum())
+            .sort("Datum")
+            .to_dict(as_series=False)
+            )
+        pivot_verdamping = {
+            row[0]: -row[1]
+            for row in zip(
+                pivot_verdamping["Datum"], pivot_verdamping["Meetwaarde.Waarde_Numeriek"]
+            )
+        }
+        
         pivot_lorentz = (
             year_data.filter(pl.col("FlowType") == "Lorentzsluizen")
             .group_by("Datum")
@@ -685,9 +753,11 @@ if measurements_debiet_carlijn_daily_filt is not None:
         # Calculate netto flow
         netto_flow = {
             d: pivot_ijssel.get(d, 0)
+            + pivot_neerslag.get(d, 0)
             + pivot_other_inflow.get(d, 0)
             + pivot_stevin.get(d, 0)
             + pivot_lorentz.get(d, 0)
+            + pivot_verdamping.get(d, 0)
             + pivot_other_outflow.get(d, 0)
             for d in dates
         }
@@ -698,17 +768,25 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 method="update",
                 args=[
                     {
-                        "x": [dates] * 6,
+                        "x": [dates] * 8,
                         "y": [
                             [pivot_ijssel.get(d, 0) for d in dates],
+                            [pivot_neerslag.get(d, 0) for d in dates],
                             [pivot_other_inflow.get(d, 0) for d in dates],
                             [pivot_stevin.get(d, 0) for d in dates],
                             [pivot_lorentz.get(d, 0) for d in dates],
+                            [pivot_verdamping.get(d, 0) for d in dates],
                             [pivot_other_outflow.get(d, 0) for d in dates],
                             [netto_flow.get(d, 0) for d in dates],
                         ],
                     },
-                    {"title": f"Daily Inflows and Outflows - {year}"},
+                    {
+                        "title": f"Daily Inflows and Outflows - {year}",
+                        "xaxis.range": [
+                            f"{year - 1}-12-31 12:00",
+                            f"{year}-12-31 12:00",
+                        ],
+                    },
                 ],
             )
         )
@@ -730,6 +808,21 @@ if measurements_debiet_carlijn_daily_filt is not None:
         row[0]: row[1]
         for row in zip(
             pivot_ijssel["Datum"], pivot_ijssel["Meetwaarde.Waarde_Numeriek"]
+        )
+    }
+
+    pivot_neerslag = (
+        first_year_data.filter(pl.col("FlowType") == "Neerslag")
+        .group_by("Datum")
+        .agg(pl.col("Meetwaarde.Waarde_Numeriek").sum())
+        .sort("Datum")
+        .to_dict(as_series=False)
+    )
+    pivot_neerslag = {
+        row[0]: row[1]
+        for row in zip(
+            pivot_neerslag["Datum"],
+            pivot_neerslag["Meetwaarde.Waarde_Numeriek"],
         )
     }
 
@@ -791,11 +884,28 @@ if measurements_debiet_carlijn_daily_filt is not None:
         )
     }
 
+    pivot_verdamping = (
+        first_year_data.filter(pl.col("FlowType") == "Verdamping")
+        .group_by("Datum")
+        .agg(pl.col("Meetwaarde.Waarde_Numeriek").sum())
+        .sort("Datum")
+        .to_dict(as_series=False)
+    )
+    pivot_verdamping = {
+        row[0]: -row[1]
+        for row in zip(
+            pivot_verdamping["Datum"],
+            pivot_verdamping["Meetwaarde.Waarde_Numeriek"],
+        )
+    }
+
     netto_flow = {
         d: pivot_ijssel.get(d, 0)
+        + pivot_neerslag.get(d, 0)
         + pivot_other_inflow.get(d, 0)
         + pivot_stevin.get(d, 0)
         + pivot_lorentz.get(d, 0)
+        + pivot_verdamping.get(d, 0)
         + pivot_other_outflow.get(d, 0)
         for d in dates
     }
@@ -808,6 +918,15 @@ if measurements_debiet_carlijn_daily_filt is not None:
             y=[pivot_ijssel.get(d, 0) for d in dates],
             name="IJssel",
             marker=dict(color=colors["IJssel"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=[pivot_neerslag.get(d, 0) for d in dates],
+            name="Neerslag",
+            marker=dict(color=colors["Neerslag"]),
         )
     )
 
@@ -841,6 +960,15 @@ if measurements_debiet_carlijn_daily_filt is not None:
     fig.add_trace(
         go.Bar(
             x=dates,
+            y=[pivot_verdamping.get(d, 0) for d in dates],
+            name="Verdamping",
+            marker=dict(color=colors["Verdamping"]),
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
             y=[pivot_other_outflow.get(d, 0) for d in dates],
             name="Overig uit",
             marker=dict(color=colors["Overig uit"]),
@@ -858,11 +986,27 @@ if measurements_debiet_carlijn_daily_filt is not None:
         )
     )
 
+    # Format monthly datetime x-axis cleanly
+    _n_months = len({(d.year, d.month) for d in dates})
+    _month_interval = next(
+        (d for d in (1, 2, 3, 4, 6, 12) if _n_months / d <= 12), 12
+    )
+
     fig.update_layout(
         barmode="relative",
-        title=f"Dagelijkse In- en Uitstromen - {first_year}",
+        title=f"Dagelijkse gesommeerde In- en Uitstromen - {first_year}",
         # xaxis_title="Date",
-        yaxis_title="Debiet in miljoen m3 per dag",
+        xaxis=dict(
+            range=[f"{first_year - 1}-12-31 12:00", f"{first_year}-12-31 12:00"],
+            dtick=f"M{_month_interval}",
+            tick0="2000-01-01",
+            tickformat="%b",
+            ticklabelmode="instant",
+            ticks="outside",
+            showgrid=False,
+            hoverformat="%d %b %Y",
+        ),
+        yaxis_title="Debiet in m3/s",
         hovermode="x unified",
         updatemenus=[
             dict(
@@ -880,9 +1024,8 @@ if measurements_debiet_carlijn_daily_filt is not None:
         width=1200,
     )
 
-    fig.write_html("interactive_flows.html")
+    # fig.write_html("interactive_flows.html")
     fig.show()
-
 # %%
 measurements_saliniteit_daily
 # %%
@@ -895,7 +1038,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
     station_name_st = "Stavoren"
 
     def prepare_station_data(wind_combined_pl, station_name_filter):
-        """Filter wind_combined for a station name substring and return a pandas df with year/direction columns.
+        """Filter wind_combined for a station name substring and return a Polars df with year/direction columns.
 
         wind_combined_pl contains both WINDSNELHEID and WINDRICHTING rows, distinguished by Grootheid.Code.
         These are pivoted into wind_speed and wind_direction columns.
@@ -915,22 +1058,29 @@ if measurements_debiet_carlijn_daily_filt is not None:
             ]
         )
 
+        direction_to_num = {d: i for i, d in enumerate(compass_directions.keys())}
+
         df_pivot = (
             df_speed.join(df_dir, on=["time", "Naam"], how="full", coalesce=True)
             .sort("time")
-            .to_pandas()
+            .with_columns(
+                pl.col("wind_speed").round(1),
+                pl.col("wind_direction").round(1),
+                pl.col("time").dt.year().alias("year"),
+            )
+            .with_columns(
+                pl.col("wind_direction")
+                .map_elements(get_wind_direction_bin, return_dtype=pl.String)
+                .alias("wind_direction_bin")
+            )
+            .with_columns(
+                pl.col("wind_direction_bin")
+                .map_elements(
+                    lambda d: direction_to_num.get(d), return_dtype=pl.Int64
+                )
+                .alias("wind_direction_num")
+            )
         )
-
-        df_pivot["wind_speed"] = df_pivot["wind_speed"].round(1)
-        df_pivot["wind_direction"] = df_pivot["wind_direction"].round(1)
-        df_pivot["wind_direction_bin"] = df_pivot["wind_direction"].apply(
-            get_wind_direction_bin
-        )
-        direction_to_num = {d: i for i, d in enumerate(compass_directions.keys())}
-        df_pivot["wind_direction_num"] = df_pivot["wind_direction_bin"].map(
-            direction_to_num
-        )
-        df_pivot["year"] = df_pivot["time"].dt.year
         return df_pivot
 
     # station_data_rh = prepare_station_data(measurements_wind_daily, "Rotterdamse")
@@ -941,11 +1091,11 @@ if measurements_debiet_carlijn_daily_filt is not None:
     YEAR_MIN = 2018
     YEAR_MAX = 2022
 
-    # unique_years_rh = sorted(station_data_rh["year"].unique().tolist()) if len(station_data_rh) > 0 else []
+    # unique_years_rh = sorted(station_data_rh["year"].unique().to_list()) if len(station_data_rh) > 0 else []
     unique_years_st = (
         sorted(
             y
-            for y in station_data_st["year"].unique().tolist()
+            for y in station_data_st["year"].drop_nulls().unique().to_list()
             if YEAR_MIN <= y <= YEAR_MAX
         )
         if len(station_data_st) > 0
@@ -953,12 +1103,10 @@ if measurements_debiet_carlijn_daily_filt is not None:
     )
 
     # --- Prepare saliniteit data ---
-    sal_df = measurements_saliniteit_daily.to_pandas()
-    sal_df["time"] = sal_df["time"]
-    sal_df["year"] = sal_df["time"].apply(
-        lambda x: x.year if hasattr(x, "year") else None
+    sal_df = measurements_saliniteit_daily.with_columns(
+        pl.col("time").dt.year().alias("year")
     )
-    sal_locations = sorted(sal_df["Naam"].unique().tolist())
+    sal_locations = sorted(sal_df["Naam"].drop_nulls().unique().to_list())
     first_sal_location = sal_locations[0] if sal_locations else None
 
     fig_combined = make_subplots(
@@ -981,10 +1129,10 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     # --- Wind traces Stavoren (row 2) ---
     for year_idx, year in enumerate(unique_years_st):
-        year_data = station_data_st[station_data_st["year"] == year]
+        year_data = station_data_st.filter(pl.col("year") == year)
         if len(year_data) == 0:
             continue
-        year_data = year_data.sort_values("time")
+        year_data = year_data.sort("time")
         times = year_data["time"].to_list()
         wind_speeds = year_data["wind_speed"].to_numpy()
         wind_directions = year_data["wind_direction_num"].to_numpy()
@@ -1055,9 +1203,11 @@ if measurements_debiet_carlijn_daily_filt is not None:
     flow_colors = {
         "Overig in": "#8CCFE3",
         "IJssel": "#3366A3",
+        "Neerslag": "#0089A5",
         "Stevinsluizen": "#C44E52",
         "Lorentzsluizen": "#E98B39",
         "Overig uit": "#F5CDA7",
+        "Verdamping": "#FF97C9",
     }
 
     flow_years = sorted(
@@ -1083,15 +1233,19 @@ if measurements_debiet_carlijn_daily_filt is not None:
             }
 
         pv_ijssel = get_pivot(year_data_flow, "IJssel")
+        pv_neerslag = get_pivot(year_data_flow, "Neerslag")
         pv_other_in = get_pivot(year_data_flow, "Overig in")
         pv_stevin = get_pivot(year_data_flow, "Stevinsluizen", negate=True)
         pv_lorentz = get_pivot(year_data_flow, "Lorentzsluizen", negate=True)
+        pv_verdamping = get_pivot(year_data_flow, "Verdamping", negate=True)
         pv_other_out = get_pivot(year_data_flow, "Overig uit", negate=True)
         netto = {
             d: pv_ijssel.get(d, 0)
+            + pv_neerslag.get(d, 0)
             + pv_other_in.get(d, 0)
             + pv_stevin.get(d, 0)
             + pv_lorentz.get(d, 0)
+            + pv_verdamping.get(d, 0)
             + pv_other_out.get(d, 0)
             for d in dates_flow
         }
@@ -1101,10 +1255,13 @@ if measurements_debiet_carlijn_daily_filt is not None:
         for legend_order, (flow_name, pivot, flow_color) in enumerate(
             [
                 ("IJssel", pv_ijssel, flow_colors["IJssel"]),
+                ("Neerslag", pv_neerslag, flow_colors["Neerslag"]),
                 ("Overig in", pv_other_in, flow_colors["Overig in"]),
                 ("Stevinsluizen", pv_stevin, flow_colors["Stevinsluizen"]),
                 ("Lorentzsluizen", pv_lorentz, flow_colors["Lorentzsluizen"]),
+                ("Verdamping", pv_verdamping, flow_colors["Verdamping"]),
                 ("Overig uit", pv_other_out, flow_colors["Overig uit"]),
+
             ]
         ):
             fig_combined.add_trace(
@@ -1113,9 +1270,9 @@ if measurements_debiet_carlijn_daily_filt is not None:
                     y=[pivot.get(d) if pivot.get(d) else None for d in dates_flow],
                     name=flow_name,
                     marker=dict(color=flow_color, line=dict(color="white", width=0.1)),
-                    hovertemplate=f"%{{y:,.0f}} m³/d {flow_name}<extra></extra>",
+                    hovertemplate=f"%{{y:,.0f}} m³/s {flow_name}<extra></extra>",
                     visible=is_visible,
-                    legendgroup=f"flow_{year}",
+                    legendgroup=f"flow_{year}_{flow_name}",
                     legend="legend",
                     legendrank=1000 + legend_order,
                     showlegend=True,
@@ -1131,24 +1288,27 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 name="Netto Flow",
                 mode="lines",
                 line=dict(color="#444444", width=1.3),
-                hovertemplate="%{y:,.0f} m³/d Netto Flow<extra></extra>",
+                hovertemplate="%{y:,.0f} m³/s Netto Flow<extra></extra>",
                 visible=is_visible,
-                legendgroup=f"flow_{year}",
+                legendgroup=f"flow_{year}_Netto Flow",
                 legend="legend",
-                legendrank=1005,
+                legendrank=1007,
                 showlegend=True,
             ),
             row=1,
             col=1,
         )
 
-    traces_per_flow_year = 6  # 5 bars + 1 netto line
+    traces_per_flow_year = 8  # 5 bars + 1 netto line
     total_flow_traces = len(flow_years) * traces_per_flow_year
 
     # --- Saliniteit traces (row 4) ---
     # Red -> white -> blue colormap based on Bemonsteringshoogte (depth).
     all_depths = sorted(
-        sal_df["WaarnemingMetadata.Bemonsteringshoogte"].dropna().unique().tolist()
+        sal_df["WaarnemingMetadata.Bemonsteringshoogte"]
+        .drop_nulls()
+        .unique()
+        .to_list()
     )
 
     depth_min = min(all_depths) if all_depths else 0.0
@@ -1184,7 +1344,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
     # Traces are grouped by location; within each location there is one trace per year
     sal_years = sorted(
         y
-        for y in sal_df["year"].dropna().astype(int).unique().tolist()
+        for y in sal_df["year"].drop_nulls().cast(pl.Int64).unique().to_list()
         if YEAR_MIN <= y <= YEAR_MAX
     )
     # (location, year) -> list of trace index offsets from sal_start
@@ -1192,19 +1352,24 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     sal_trace_offset = 0
     for loc_idx, location in enumerate(sal_locations):
-        loc_df = sal_df[sal_df["Naam"] == location].sort_values("time")
-        loc_years = sorted(loc_df["year"].dropna().astype(int).unique().tolist())
+        loc_df = sal_df.filter(pl.col("Naam") == location).sort("time")
+        loc_years = sorted(
+            loc_df["year"].drop_nulls().cast(pl.Int64).unique().to_list()
+        )
         for yr_idx, year in enumerate(loc_years):
-            yr_df = loc_df[loc_df["year"] == year]
+            yr_df = loc_df.filter(pl.col("year") == year)
             depths = sorted(
-                yr_df["WaarnemingMetadata.Bemonsteringshoogte"].unique().tolist()
+                yr_df["WaarnemingMetadata.Bemonsteringshoogte"]
+                .drop_nulls()
+                .unique()
+                .to_list()
             )
             for depth_idx, depth in enumerate(depths):
                 # Color based on depth rank within this location's depths
                 depth_color = depth_to_color(depth, depths)
-                depth_df = yr_df[
-                    yr_df["WaarnemingMetadata.Bemonsteringshoogte"] == depth
-                ]
+                depth_df = yr_df.filter(
+                    pl.col("WaarnemingMetadata.Bemonsteringshoogte") == depth
+                )
                 # Break legend label into lines of at most 2 words each
                 _name_words = f"{location} {depth}m".split()
                 _sal_name = "<br>".join(
@@ -1213,8 +1378,8 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 )
                 fig_combined.add_trace(
                     go.Scatter(
-                        x=depth_df["time"].tolist(),
-                        y=depth_df["Meetwaarde.Waarde_Numeriek"].tolist(),
+                        x=depth_df["time"].to_list(),
+                        y=depth_df["Meetwaarde.Waarde_Numeriek"].to_list(),
                         mode="lines",
                         name=_sal_name,
                         line=dict(color=depth_color, width=1.5),
@@ -1272,9 +1437,9 @@ if measurements_debiet_carlijn_daily_filt is not None:
     sal_max_by_location_year = {}
     for location in sal_locations:
         for year in sal_years:
-            loc_year_sal = sal_df[
-                (sal_df["Naam"] == location) & (sal_df["year"] == year)
-            ]["Meetwaarde.Waarde_Numeriek"]
+            loc_year_sal = sal_df.filter(
+                (pl.col("Naam") == location) & (pl.col("year") == year)
+            )["Meetwaarde.Waarde_Numeriek"]
 
             if len(loc_year_sal) > 0:
                 sal_max_by_location_year[f"{location}||{int(year)}"] = float(
@@ -1378,9 +1543,27 @@ if measurements_debiet_carlijn_daily_filt is not None:
         showlegend=True,
         paper_bgcolor="#F4F7F8",
         plot_bgcolor="#FAFCFC",
-        legend=dict(x=1.02, y=1.0, yanchor="top"),
-        legend2=dict(x=1.02, y=1.48 / 3, yanchor="top", font=dict(size=12)),
-        legend3=dict(x=1.02, y=0.7 / 3, yanchor="top", font=dict(size=10)),
+        legend=dict(
+            x=1.02,
+            y=1.0,
+            yanchor="top",
+            font=dict(size=10),
+            tracegroupgap=0,
+        ),
+        legend2=dict(
+            x=1.02,
+            y=1.48 / 3,
+            yanchor="top",
+            font=dict(size=10),
+            tracegroupgap=0,
+        ),
+        legend3=dict(
+            x=1.02,
+            y=0.7 / 3,
+            yanchor="top",
+            font=dict(size=9),
+            tracegroupgap=0,
+        ),
         updatemenus=[
             dict(
                 type="dropdown",
@@ -1435,7 +1618,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     # Update y-axis titles for all subplots
     fig_combined.update_yaxes(
-        title_text="Debiet [miljoen m³/dag]",
+        title_text="Debiet [m³/s]",
         title_font=yaxis_title_font,
         row=1,
         col=1,
@@ -1457,10 +1640,14 @@ if measurements_debiet_carlijn_daily_filt is not None:
         range=[0, max_sal * 1.05],
     )
 
-    # Initial x-axis range
+    # Initial x-axis range and explicit monthly ticks (guarantees Jan-Dec for all years)
+    month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     if default_year is not None:
         fig_combined.update_xaxes(
-            range=[f"{default_year - 1}-12-24", f"{default_year + 1}-01-07"]
+            range=[f"{default_year-1}-12-28", f"{default_year}-12-31 23:59:59"],
+            tickmode="array",
+            tickvals=[f"{default_year}-{m:02d}-01" for m in range(1, 13)],
+            ticktext=month_labels,
         )
 
     # Build a dictionary of empty combinations for JavaScript
@@ -1540,21 +1727,29 @@ if measurements_debiet_carlijn_daily_filt is not None:
                 }});
             }}
 
+            const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const monthTickVals = Array.from({{length: 12}}, (_, i) =>
+                String(state.year) + "-" + String(i + 1).padStart(2, "0") + "-01"
+            );
+
             const layoutUpdate = {{
                 "title.text": "IJsselmeer waterbalans, wind en saliniteit<br>" +
                             state.year + " - " + state.salLocation,
                 "xaxis.range": [
-                    String(state.year - 1) + "-12-24",
-                    String(state.year + 1) + "-01-07"
+                    String(state.year-1) + "-12-28",
+                    String(state.year) + "-12-31 23:59:59"
                 ],
                 "xaxis2.range": [
-                    String(state.year - 1) + "-12-24",
-                    String(state.year + 1) + "-01-07"
+                    String(state.year-1) + "-12-28",
+                    String(state.year) + "-12-31 23:59:59"
                 ],
                 "xaxis3.range": [
-                    String(state.year - 1) + "-12-24",
-                    String(state.year + 1) + "-01-07"
+                    String(state.year-1) + "-12-28",
+                    String(state.year) + "-12-31 23:59:59"
                 ],
+                "xaxis3.tickmode": "array",
+                "xaxis3.tickvals": monthTickVals,
+                "xaxis3.ticktext": monthLabels,
                 "yaxis3.range": [0, salMax * 1.05],
                 "annotations": annotations
             }};
@@ -1583,7 +1778,7 @@ if measurements_debiet_carlijn_daily_filt is not None:
     """
 
     combined_output_path = (
-        output_dir / f"interactive_plot_waterbalans_wind_saliniteit_{TODAY}.html"
+        output_dir / f"interactive_plot_YMR_waterbalans_wind_saliniteit_{TODAY}.html"
     )
 
     fig_combined.write_html(
@@ -1597,5 +1792,4 @@ if measurements_debiet_carlijn_daily_filt is not None:
 
     print(f"Saved combined: {combined_output_path}")
     fig_combined.show()
-
 # %%

@@ -154,7 +154,7 @@ if dfs:
     # Define NAMEs that are leaving (outflows)
     outflows = [
         "Verdamping",
-        "Stevin spuisluizen (afsluitdijk)",
+        "Stevin spuisluizen (Afsluitdijk)",
         "Lorentz spuisluizen (Afsluitdijk)",
         "lek Spuisluizen (Afsluitdijk)",
         "PWN & WRK III",
